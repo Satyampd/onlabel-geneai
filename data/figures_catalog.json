@@ -1,0 +1,43 @@
+{
+  "figures": [
+    {
+      "id": "fig-pen-features-diagram",
+      "caption": "Diagram of the Kesimpta auto-injector pen highlighting three key features: hidden needle, sound guidance, and visual progress window.",
+      "bbox": [
+        35,
+        31,
+        569,
+        476
+      ],
+      "doc": "brochure",
+      "page": 4,
+      "image_path": "data/figures/fig-pen-features-diagram.png"
+    },
+    {
+      "id": "fig-things-to-consider-chart",
+      "caption": "Comparison chart titled 'Things to Consider' contrasting KESIMPTA with other B-cell treatments regarding self-administration, location, steroid pretreatment, and post-dose observation.",
+      "bbox": [
+        164,
+        26,
+        417,
+        469
+      ],
+      "doc": "brochure",
+      "page": 9,
+      "image_path": "data/figures/fig-things-to-consider-chart.png"
+    },
+    {
+      "id": "fig-administration-times-methods-chart",
+      "caption": "Comparison chart titled 'Administration Times & Methods' showing administration duration, frequency, and location for KESIMPTA, Ocrevus, Ocrevus Zunovo, and Briumvi.",
+      "bbox": [
+        99,
+        533,
+        456,
+        985
+      ],
+      "doc": "brochure",
+      "page": 9,
+      "image_path": "data/figures/fig-administration-times-methods-chart.png"
+    }
+  ]
+}
