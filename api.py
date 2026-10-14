@@ -266,6 +266,15 @@ figures_dir = os.path.join(os.path.dirname(__file__), "data", "figures")
 if os.path.exists(figures_dir):
     app.mount("/api/figures", StaticFiles(directory=figures_dir), name="figures")
 
+
+@app.get("/api/doc/{doc_name}.pdf")
+def get_pdf(doc_name: str):
+    if doc_name == "medication_guide" and os.path.exists(config.MEDICATION_GUIDE_PDF):
+        return FileResponse(config.MEDICATION_GUIDE_PDF, media_type="application/pdf", filename="KESIMPTA_Medication_Guide.pdf")
+    elif doc_name == "brochure" and os.path.exists(config.BROCHURE_PDF):
+        return FileResponse(config.BROCHURE_PDF, media_type="application/pdf", filename="KESIMPTA_Patient_Brochure.pdf")
+    raise HTTPException(status_code=404, detail="Document not found")
+
 # Serve frontend
 web_dir = os.path.join(os.path.dirname(__file__), "web")
 if os.path.exists(web_dir):

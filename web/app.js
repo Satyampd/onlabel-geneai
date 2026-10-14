@@ -40,7 +40,10 @@
     log: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="M9 11h6"/><path d="M9 15h4"/>',
     image: '<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',
     clipboard: '<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/>',
-    send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>'
+    send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
+    phone: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92Z"/>',
+    siren: '<path d="M7 18v-6a5 5 0 0 1 10 0v6"/><path d="M5 21h14"/><path d="M5 18h14"/><path d="M12 3V2"/><path d="m19.5 5.5.7-.7"/><path d="m4.5 5.5-.7-.7"/><path d="M21 11h1"/><path d="M2 11h1"/>',
+    pdf: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>'
   };
   function icon(name, size) { return SVG_OPEN.replace(/WS/g, String(size || 16)) + P[name] + "</svg>"; }
 
@@ -75,6 +78,8 @@
     whyToggle: $("whyToggle"),
     newChat: $("newChatBtn"),
     isiBtn: $("isiBtn"),
+    heroDocBtn: $("heroDocBtn"),
+    heroSupportBtn: $("heroSupportBtn"),
     backdrop: $("backdrop"),
     drawer: $("drawer"),
     drawerTitle: $("drawerTitle"),
@@ -463,6 +468,128 @@
     return card;
   }
 
+  function getContextualFollowups(data) {
+    var intent = data && data.why && data.why.intent ? data.why.intent : "";
+    var ans = ((data && data.answer) || "").toLowerCase();
+
+    if (intent === "storage" || ans.indexOf("refrigerat") >= 0 || ans.indexOf("temperature") >= 0) {
+      return [
+        "How do I use the Sensoready pen?",
+        "Where on my body do I inject?",
+        "What are common side effects?"
+      ];
+    } else if (intent === "how_to_use" || ans.indexOf("inject") >= 0 || ans.indexOf("sensoready") >= 0) {
+      return [
+        "How do I store the pen?",
+        "What if I miss a monthly dose?",
+        "What are common side effects?"
+      ];
+    } else if (intent === "missed_dose" || ans.indexOf("miss") >= 0 || ans.indexOf("schedule") >= 0) {
+      return [
+        "How do I use the Sensoready pen?",
+        "How should Kesimpta be stored?",
+        "Who should not take Kesimpta?"
+      ];
+    } else if (intent === "side_effects" || ans.indexOf("reaction") >= 0 || ans.indexOf("headache") >= 0) {
+      return [
+        "What should I tell my doctor before starting?",
+        "How is Kesimpta administered?",
+        "How do I store my pens?"
+      ];
+    }
+    return [
+      "How does the auto-injector pen work?",
+      "Does Kesimpta need refrigeration?",
+      "What are common side effects?"
+    ];
+  }
+
+  function buildResponseCTAs(kindKey, data) {
+    var ctaWrap = el("div", "cta-wrap");
+    var ctaRow = el("div", "cta-row");
+    var hasCTAs = false;
+
+    function addBtn(href, iconName, label, tone, external) {
+      var a = el("a", "cta-btn" + (tone ? " cta-btn--" + tone : ""));
+      a.href = href;
+      if (external) {
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+      }
+      append(a, iconEl(iconName, 13), el("span", "", label));
+      if (external) append(a, iconEl("external", 11, "cta-btn__ext"));
+      ctaRow.appendChild(a);
+      hasCTAs = true;
+    }
+
+    function addDrawerBtn(type, iconName, label, tone) {
+      var btn = el("button", "cta-btn" + (tone ? " cta-btn--" + tone : ""));
+      btn.type = "button";
+      append(btn, iconEl(iconName, 13), el("span", "", label));
+      btn.addEventListener("click", function () {
+        if (type === "doctor") openDoctorDiscussionDrawer(btn);
+        else if (type === "support") openSupportDrawer(btn);
+      });
+      ctaRow.appendChild(btn);
+      hasCTAs = true;
+    }
+
+    if (kindKey === "red_urgent") {
+      addBtn("tel:911", "siren", "Call 911 (Emergency)", "emergency", false);
+      addBtn("tel:18886696682", "phone", "Novartis Safety: 1-888-669-6682", "phone", false);
+      addBtn("https://www.accessdata.fda.gov/scripts/medwatch/index.cfm", "external", "FDA MedWatch Report", "link", true);
+    } else if (kindKey === "red_side_effect") {
+      addBtn("tel:911", "siren", "Emergency: Call 911", "emergency", false);
+      addBtn("tel:18886696682", "phone", "Report to Novartis: 1-888-669-6682", "phone", false);
+      addBtn("https://www.accessdata.fda.gov/scripts/medwatch/index.cfm", "external", "FDA MedWatch Online", "link", true);
+      addDrawerBtn("doctor", "clipboard", "Doctor Discussion Guide", "action");
+    } else if (kindKey === "red_pregnancy") {
+      addBtn("tel:18773118972", "phone", "MotherToBaby: 1-877-311-8972", "phone", false);
+      addBtn("https://mothertobaby.org/join-study/", "external", "MotherToBaby Study Online", "link", true);
+      addBtn("tel:18886696682", "phone", "Call Novartis: 1-888-669-6682", "link", false);
+    } else if (kindKey === "red_complaint") {
+      addBtn("tel:18886696682", "phone", "Novartis Quality: 1-888-669-6682", "phone", false);
+      addBtn("/api/doc/brochure.pdf", "pdf", "Instructions for Use (PDF)", "pdf", true);
+    } else if (kindKey === "advice") {
+      addDrawerBtn("doctor", "clipboard", "Doctor Discussion Guide", "action");
+      addDrawerBtn("support", "phone", "Alongside KESIMPTA (855-537-4678)", "phone");
+      addBtn("/api/doc/medication_guide.pdf", "pdf", "Medication Guide (PDF)", "pdf", true);
+    } else if (kindKey === "no_answer" || kindKey === "off_topic") {
+      addDrawerBtn("support", "phone", "Alongside KESIMPTA (855-537-4678)", "phone");
+      addBtn("tel:18886696682", "phone", "Novartis: 1-888-669-6682", "link", false);
+      addBtn("/api/doc/medication_guide.pdf", "pdf", "Medication Guide (PDF)", "pdf", true);
+    } else if (isMatchKind(kindKey)) {
+      addDrawerBtn("doctor", "clipboard", "Doctor Discussion Guide", "action");
+      addBtn("/api/doc/medication_guide.pdf", "pdf", "Medication Guide (PDF)", "pdf", true);
+      addBtn("/api/doc/brochure.pdf", "pdf", "Patient Instructions (PDF)", "pdf", true);
+    }
+
+    if (hasCTAs) ctaWrap.appendChild(ctaRow);
+
+    // Contextual Follow-Up Suggestions (for answered turns)
+    if (isMatchKind(kindKey)) {
+      var followups = getContextualFollowups(data);
+      if (followups && followups.length) {
+        var fWrap = el("div", "cta-followups");
+        var fLabel = el("span", "cta-followups__label", "Suggested follow-ups:");
+        fWrap.appendChild(fLabel);
+        var fChips = el("div", "cta-followups__chips");
+        followups.forEach(function (q) {
+          var btn = el("button", "cta-chip");
+          btn.type = "button";
+          btn.appendChild(el("span", "", q));
+          btn.appendChild(iconEl("arrow", 12));
+          btn.addEventListener("click", function () { send(q); });
+          fChips.appendChild(btn);
+        });
+        fWrap.appendChild(fChips);
+        ctaWrap.appendChild(fWrap);
+      }
+    }
+
+    return (hasCTAs || (ctaWrap.children.length > 0)) ? ctaWrap : null;
+  }
+
   /** Render one assistant reply from the API payload (or a client-side error). */
   function addBotMessage(data) {
     var kindKey = kindOf(data);
@@ -481,6 +608,10 @@
     }
     box.appendChild(statusPill(kindKey));
     renderReply(box, replyText, data, kindKey);
+
+    var ctas = buildResponseCTAs(kindKey, data);
+    if (ctas) box.appendChild(ctas);
+
     if (isRedKind(kindKey)) {
       var foot = el("p", "safety-box__foot");
       foot.appendChild(iconEl("log", 14));
@@ -718,6 +849,55 @@
     openDrawer("Important Safety Information", "", body, els.isiBtn, "isi");
   }
 
+  function openDoctorDiscussionDrawer(opener) {
+    var wrap = el("div", "drawer__discussion");
+    var intro = el("p", "drawer__text", "When speaking with your doctor or neurologist about KESIMPTA, here are key questions and discussion points to review:");
+
+    var ul = el("ul", "drawer__checklist");
+    [
+      "Is KESIMPTA the right disease-modifying therapy (DMT) for my relapsing MS?",
+      "What baseline lab tests and screenings (hepatitis B virus, quantitative immunoglobulins, vaccine history) do I need before starting?",
+      "What should I do if I experience an injection-related reaction or fever after my first few doses?",
+      "How should I manage my monthly injection schedule if I travel or miss a scheduled injection?",
+      "Can your office help connect me with Alongside KESIMPTA for $0 copay card savings and injection training support?"
+    ].forEach(function (q) {
+      var li = el("li", "drawer__checkitem");
+      li.appendChild(el("span", "drawer__checkbullet", "✓"));
+      li.appendChild(el("span", "", q));
+      ul.appendChild(li);
+    });
+
+    var note = el("div", "drawer__foot-note");
+    note.appendChild(el("p", "", "Always follow the guidance of your prescribing physician. For medical emergencies, dial 911 immediately."));
+
+    append(wrap, intro, ul, note);
+    openDrawer("Doctor Discussion Guide", "Approved discussion points for your next appointment", wrap, opener || document.activeElement, "isi");
+  }
+
+  function openSupportDrawer(opener) {
+    var wrap = el("div", "drawer__discussion");
+    var intro = el("p", "drawer__text", "Alongside KESIMPTA is Novartis's dedicated patient support program for people prescribed KESIMPTA:");
+
+    var card1 = el("div", "support-card");
+    append(card1, el("div", "support-card__title", "Alongside KESIMPTA Coordinator"), el("p", "support-card__text", "Speak with a dedicated support coordinator for insurance navigation, questions on accessing medication, and free injection training."));
+    var btn1 = el("a", "cta-btn cta-btn--phone");
+    btn1.href = "tel:18555374678";
+    append(btn1, iconEl("phone", 13), el("span", "", "Call 1-855-537-4678"));
+    card1.appendChild(btn1);
+
+    var card2 = el("div", "support-card");
+    append(card2, el("div", "support-card__title", "$0 Copay Savings Program"), el("p", "support-card__text", "Eligible commercially insured patients may pay as little as $0 per monthly dose (up to $18,000 annual maximum)."));
+    var btn2 = el("a", "cta-btn cta-btn--link");
+    btn2.href = "https://www.kesimpta.com/alongside-kesimpta";
+    btn2.target = "_blank";
+    btn2.rel = "noopener noreferrer";
+    append(btn2, iconEl("external", 13), el("span", "", "Visit AlongsideKesimpta.com"));
+    card2.appendChild(btn2);
+
+    append(wrap, intro, card1, card2);
+    openDrawer("Alongside KESIMPTA Support", "Patient assistance, nurse support & copay program", wrap, opener || document.activeElement, "isi");
+  }
+
   function openSourceDrawer(url, label, opener) {
     if (url && typeof url === "string" && !url.startsWith("/") && !url.startsWith("http")) {
       url = "/" + url;
@@ -886,6 +1066,12 @@
   });
   els.newChat.addEventListener("click", newChat);
   els.isiBtn.addEventListener("click", openSafetyDrawer);
+  if (els.heroDocBtn) {
+    els.heroDocBtn.addEventListener("click", function () { openDoctorDiscussionDrawer(els.heroDocBtn); });
+  }
+  if (els.heroSupportBtn) {
+    els.heroSupportBtn.addEventListener("click", function () { openSupportDrawer(els.heroSupportBtn); });
+  }
   els.drawerClose.addEventListener("click", closeDrawer);
   els.backdrop.addEventListener("click", closeDrawer);
   document.addEventListener("keydown", function (e) {

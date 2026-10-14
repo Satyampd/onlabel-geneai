@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="light">
   <title>OnLabel · Approved answers for KESIMPTA</title>
   <link rel="stylesheet" href="static/theme.css?v=2">
-  <link rel="stylesheet" href="static/app.css?v=2">
+  <link rel="stylesheet" href="static/app.css?v=4">
 </head>
 <body>
   <div class="aurora" aria-hidden="true"><span></span></div>
@@ -28,9 +28,13 @@
         <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
         <span class="switch__label">Details</span>
       </button>
+      <a class="tbtn" id="medGuideBtn" href="/api/doc/medication_guide.pdf" target="_blank" rel="noopener noreferrer" title="Download Official Medication Guide (PDF)">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        <span class="tbtn__label">Med Guide (PDF)</span>
+      </a>
       <button type="button" class="tbtn" id="isiBtn" aria-haspopup="dialog" aria-controls="drawer">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><path d="M12 16.5h.01"/></svg>
-        <span class="tbtn__label">Safety information</span>
+        <span class="tbtn__label">Safety info</span>
       </button>
       <button type="button" class="tbtn tbtn--icon" id="newChatBtn" aria-label="New chat" title="New chat">
         <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
@@ -56,6 +60,20 @@
           </h1>
           <p class="hero__subtitle">Approved KESIMPTA information, with the page it comes from.</p>
           <div class="starters" id="starters" role="group" aria-label="Suggested questions"></div>
+          <div class="hero__ctas" role="navigation" aria-label="Quick resources">
+            <a class="hero-cta" href="/api/doc/medication_guide.pdf" target="_blank" rel="noopener noreferrer">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              <span>Medication Guide (PDF)</span>
+            </a>
+            <button type="button" class="hero-cta" id="heroDocBtn">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/><path d="m9 14 2 2 4-4"/></svg>
+              <span>Doctor Discussion Guide</span>
+            </button>
+            <button type="button" class="hero-cta hero-cta--support" id="heroSupportBtn">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92Z"/></svg>
+              <span>Alongside KESIMPTA Support</span>
+            </button>
+          </div>
         </section>
 
         <!-- Message list -->
@@ -93,6 +111,6 @@
     <div class="drawer__body" id="drawerBody"></div>
   </aside>
 
-  <script src="static/app.js?v=3"></script>
+  <script src="static/app.js?v=4"></script>
 </body>
 </html>

@@ -674,3 +674,252 @@ body {
   font-size: .75rem;
   color: #047857;
 }
+
+/* =====================================================================
+   Hero Quick Resources CTAs
+   ===================================================================== */
+.hero__ctas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 18px;
+}
+.hero-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 13px;
+  border-radius: 999px;
+  font-size: .81rem;
+  font-family: inherit;
+  font-weight: 500;
+  color: var(--text-2);
+  background: rgba(255, 255, 255, .88);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .04);
+  text-decoration: none;
+  cursor: pointer;
+  transition: all .16s ease;
+}
+.hero-cta:hover {
+  color: var(--ink);
+  background: #FFFFFF;
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px rgba(79, 70, 229, .12);
+  transform: translateY(-1px);
+}
+.hero-cta--support {
+  color: #1D4ED8;
+  background: #EFF6FF;
+  border-color: #BFDBFE;
+}
+.hero-cta--support:hover {
+  background: #DBEAFE;
+  color: #1E40AF;
+  border-color: #93C5FD;
+}
+
+/* =====================================================================
+   Response Call-to-Actions (CTAs) & Quick Actions
+   ===================================================================== */
+.cta-wrap {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.cta-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: .8rem;
+  font-family: inherit;
+  font-weight: 550;
+  text-decoration: none;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all .15s ease;
+  line-height: 1.3;
+}
+.cta-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0,0,0,.08);
+}
+.cta-btn__ext {
+  opacity: .6;
+  margin-left: 2px;
+}
+
+/* Tone variants */
+.cta-btn--emergency {
+  background: #DC2626;
+  color: #FFFFFF !important;
+  box-shadow: 0 1px 4px rgba(220, 38, 38, .3);
+}
+.cta-btn--emergency:hover {
+  background: #B91C1C;
+  color: #FFFFFF !important;
+}
+
+.cta-btn--phone {
+  background: #EFF6FF;
+  color: #1D4ED8;
+  border-color: #BFDBFE;
+}
+.cta-btn--phone:hover {
+  background: #DBEAFE;
+  border-color: #93C5FD;
+}
+
+.cta-btn--link {
+  background: #F8FAFC;
+  color: #334155;
+  border-color: #CBD5E1;
+}
+.cta-btn--link:hover {
+  background: #F1F5F9;
+  color: #0F172A;
+  border-color: #94A3B8;
+}
+
+.cta-btn--pdf {
+  background: #FAF5FF;
+  color: #7E22CE;
+  border-color: #E9D5FF;
+}
+.cta-btn--pdf:hover {
+  background: #F3E8FF;
+  color: #6B21A8;
+  border-color: #D8B4FE;
+}
+
+.cta-btn--action {
+  background: #F0FDF4;
+  color: #15803D;
+  border-color: #BBF7D0;
+}
+.cta-btn--action:hover {
+  background: #DCFCE7;
+  color: #166534;
+  border-color: #86EFAC;
+}
+
+/* Contextual follow-up question chips */
+.cta-followups {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(100, 116, 139, .18);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cta-followups__label {
+  font-size: .74rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--muted);
+}
+.cta-followups__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: .78rem;
+  font-family: inherit;
+  font-weight: 500;
+  color: var(--text-2);
+  background: #F8FAFC;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all .14s ease;
+  text-align: left;
+}
+.cta-chip:hover {
+  background: #EEF2FF;
+  border-color: #C7D2FE;
+  color: #4338CA;
+  transform: translateY(-1px);
+}
+.cta-chip:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* =====================================================================
+   Drawer: Doctor Discussion Guide & Support
+   ===================================================================== */
+.drawer__discussion {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.drawer__checklist {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.drawer__checkitem {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: .88rem;
+  line-height: 1.45;
+  color: var(--ink);
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #F8FAFC;
+  border: 1px solid var(--border);
+}
+.drawer__checkbullet {
+  color: #10B981;
+  font-weight: 700;
+  flex-shrink: 0;
+  font-size: .95rem;
+}
+.drawer__foot-note {
+  font-size: .78rem;
+  color: var(--muted);
+  font-style: italic;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.support-card {
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: #FFFFFF;
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 3px rgba(0,0,0,.03);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.support-card__title {
+  font-size: .92rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+.support-card__text {
+  font-size: .83rem;
+  line-height: 1.4;
+  color: var(--text-2);
+  margin: 0;
+}
