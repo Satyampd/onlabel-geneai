@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OnLabel · KESIMPTA Patient Information</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #f8fafc;
+      --bg-surface: #ffffff;
+      --text-main: #0d233a;
+      --text-muted: #64748b;
+      --teal-primary: #008080;
+      --teal-hover: #006666;
+      --teal-subtle: #e6f3f3;
+      --border-color: #e2e8f0;
+      --user-bubble: #e0f2fe;
+      --amber-accent: #f59e0b;
+      --amber-bg: #fffbeb;
+      --red-accent: #ef4444;
+      --red-bg: #fef2f2;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
+      --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.08);
+      --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-family);
+      background-color: var(--bg-primary);
+      color: var(--text-main);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Top Banner */
+    .top-banner {
+      background: #fef3c7;
+      color: #92400e;
+      padding: 8px 16px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      text-align: center;
+      border-bottom: 1px solid #fde68a;
+      flex-shrink: 0;
+    }
+
+    /* Header */
+    header {
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-color);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-logo {
+      width: 32px;
+      height: 32px;
+      background: var(--teal-primary);
+      color: white;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 1.1rem;
+    }
+
+    .brand-title h1 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .brand-title p {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .toggle-label {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    /* Main Container Layout */
+    .app-container {
+      display: flex;
+      flex: 1;
+      height: calc(100vh - 110px);
+      overflow: hidden;
+    }
+
+    /* Chat Area */
+    .chat-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      background: var(--bg-primary);
+    }
+
+    .messages-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    /* Message Bubbles */
+    .message-row {
+      display: flex;
+      flex-direction: column;
+      max-width: 80%;
+      animation: fadeIn 0.25s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .message-row.user {
+      align-self: flex-end;
+      align-items: flex-end;
+    }
+
+    .message-row.assistant {
+      align-self: flex-start;
+      align-items: flex-start;
+    }
+
+    .bubble {
+      padding: 14px 18px;
+      border-radius: 12px;
+      font-size: 0.95rem;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-word;
+      position: relative;
+    }
+
+    .message-row.user .bubble {
+      background: var(--user-bubble);
+      color: var(--text-main);
+      border-bottom-right-radius: 2px;
+    }
+
+    .message-row.assistant .bubble {
+      background: var(--bg-surface);
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+      border-bottom-left-radius: 2px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    /* Style by Kind */
+    .bubble.kind-advice {
+      border-left: 5px solid var(--amber-accent);
+      background: var(--amber-bg);
+    }
+
+    .bubble.kind-red {
+      border-left: 5px solid var(--red-accent);
+      background: var(--red-bg);
+    }
+
+    .bubble.kind-error {
+      border-left: 5px solid var(--text-muted);
+      background: #f1f5f9;
+    }
+
+    .safety-tag {
+      display: inline-block;
+      background: var(--red-accent);
+      color: white;
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .advice-tag {
+      display: inline-block;
+      background: var(--amber-accent);
+      color: white;
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    /* Citation & Source Button */
+    .citation-bar {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(0,0,0,0.06);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+    }
+
+    .btn-view-source {
+      background: var(--teal-subtle);
+      color: var(--teal-primary);
+      border: 1px solid rgba(0,128,128,0.2);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.15s ease;
+    }
+
+    .btn-view-source:hover {
+      background: var(--teal-primary);
+      color: white;
+    }
+
+    /* "Why" line */
+    .why-line {
+      margin-top: 6px;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      font-family: monospace;
+      padding: 2px 6px;
+      background: rgba(0,0,0,0.03);
+      border-radius: 4px;
+      max-width: 100%;
+    }
+
+    /* Starters Chips */
+    .starters-section {
+      padding: 12px 24px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      background: var(--bg-surface);
+      border-top: 1px solid var(--border-color);
+    }
+
+    .starter-chip {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 20px;
+      padding: 6px 14px;
+      font-size: 0.85rem;
+      color: var(--text-main);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .starter-chip:hover {
+      border-color: var(--teal-primary);
+      color: var(--teal-primary);
+      background: var(--teal-subtle);
+    }
+
+    /* Input Bar */
+    .input-bar {
+      padding: 16px 24px;
+      background: var(--bg-surface);
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .input-field {
+      flex: 1;
+      padding: 12px 18px;
+      border: 1px solid var(--border-color);
+      border-radius: 24px;
+      font-size: 0.95rem;
+      outline: none;
+      font-family: inherit;
+      transition: border 0.2s;
+    }
+
+    .input-field:focus {
+      border-color: var(--teal-primary);
+      box-shadow: 0 0 0 3px rgba(0,128,128,0.15);
+    }
+
+    .btn-send {
+      background: var(--teal-primary);
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .btn-send:hover {
+      background: var(--teal-hover);
+    }
+
+    .btn-send:disabled {
+      background: #cbd5e1;
+      cursor: not-allowed;
+    }
+
+    /* Side Panel: Important Safety Info */
+    .safety-panel-container {
+      width: 360px;
+      background: var(--bg-surface);
+      border-left: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      transition: width 0.2s ease;
+    }
+
+    .safety-panel-header {
+      padding: 16px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 600;
+      font-size: 0.95rem;
+      color: var(--text-main);
+    }
+
+    .safety-panel-content {
+      padding: 16px;
+      overflow-y: auto;
+      flex: 1;
+      font-size: 0.85rem;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      color: #334155;
+    }
+
+    /* Source Page Modal */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(13, 35, 58, 0.6);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 20px;
+    }
+
+    .modal-card {
+      background: var(--bg-surface);
+      border-radius: 12px;
+      width: 90%;
+      max-width: 800px;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
+      overflow: hidden;
+    }
+
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-header h3 {
+      font-size: 1.05rem;
+      font-weight: 600;
+    }
+
+    .modal-body {
+      padding: 20px;
+      overflow-y: auto;
+      text-align: center;
+      background: #f1f5f9;
+    }
+
+    .modal-body img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 6px;
+      box-shadow: var(--shadow-md);
+      background: white;
+    }
+
+    .btn-close {
+      background: none;
+      border: none;
+      font-size: 1.4rem;
+      cursor: pointer;
+      color: var(--text-muted);
+    }
+
+    /* Typing Indicator */
+    .typing-indicator {
+      display: none;
+      align-self: flex-start;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      padding: 12px 18px;
+      border-radius: 12px;
+      border-bottom-left-radius: 2px;
+      gap: 5px;
+      align-items: center;
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      background: var(--text-muted);
+      border-radius: 50%;
+      animation: bounce 1.4s infinite ease-in-out;
+    }
+
+    .dot:nth-child(2) { animation-delay: 0.2s; }
+    .dot:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes bounce {
+      0%, 80%, 100% { transform: translateY(0); }
+      40% { transform: translateY(-6px); }
+    }
+
+    @media (max-width: 900px) {
+      .app-container {
+        flex-direction: column;
+      }
+      .safety-panel-container {
+        width: 100%;
+        height: 200px;
+        border-left: none;
+        border-top: 1px solid var(--border-color);
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Banner -->
+  <div class="top-banner" id="banner">
+    Prototype for a hackathon demo — not for patient use. Uses public KESIMPTA information only. Reports entered here are not sent to Novartis.
+  </div>
+
+  <!-- Header -->
+  <header>
+    <div class="brand">
+      <div class="brand-logo">🛡️</div>
+      <div class="brand-title">
+        <h1>OnLabel · KESIMPTA</h1>
+        <p>Verified Patient Information Assistant (GAR Architecture)</p>
+      </div>
+    </div>
+    <div class="header-actions">
+      <label class="toggle-label">
+        <input type="checkbox" id="toggleWhy" checked> Show decision details
+      </label>
+      <button class="btn-view-source" id="toggleSafetyPanelBtn">📋 Safety Info</button>
+    </div>
+  </header>
+
+  <!-- App Body Layout -->
+  <div class="app-container">
+    <!-- Chat Area -->
+    <div class="chat-container">
+      <div class="messages-area" id="messagesArea">
+        <!-- Welcome Message -->
+        <div class="message-row assistant">
+          <div class="bubble">
+            Hello! I am OnLabel, your KESIMPTA patient information assistant.
+            Every response I provide is retrieved word-for-word from approved public KESIMPTA documents.
+
+            How can I help you today?
+          </div>
+        </div>
+      </div>
+
+      <!-- Typing Indicator -->
+      <div class="typing-indicator" id="typingIndicator">
+        <div class="dot"></div>
+        <div class="dot"></div>
+        <div class="dot"></div>
+      </div>
+
+      <!-- Starters Section -->
+      <div class="starters-section" id="startersArea">
+        <!-- Dynamic starter chips -->
+      </div>
+
+      <!-- Input Bar -->
+      <form class="input-bar" id="chatForm">
+        <input type="text" class="input-field" id="messageInput" placeholder="Ask about using the pen, storage, dosing schedule, or side effects..." autocomplete="off">
+        <button type="submit" class="btn-send" id="sendBtn">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
+      </form>
+    </div>
+
+    <!-- Collapsible Safety Panel -->
+    <aside class="safety-panel-container" id="safetyPanel">
+      <div class="safety-panel-header">
+        <span>📋 Important Safety Information</span>
+      </div>
+      <div class="safety-panel-content" id="safetyPanelContent">
+        Loading safety guidelines...
+      </div>
+    </aside>
+  </div>
+
+  <!-- Source Page Modal -->
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="modalTitle">Cited Source Document Page</h3>
+        <button class="btn-close" id="modalCloseBtn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <img id="modalImg" src="" alt="Source Page Preview">
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // State initialization
+    let sessionId = sessionStorage.getItem("onlabel_session_id");
+    if (!sessionId) {
+      sessionId = "web-" + Math.random().toString(36).substring(2, 10);
+      sessionStorage.setItem("onlabel_session_id", sessionId);
+    }
+
+    let showWhyDetails = true;
+
+    // Elements
+    const messagesArea = document.getElementById("messagesArea");
+    const chatForm = document.getElementById("chatForm");
+    const messageInput = document.getElementById("messageInput");
+    const sendBtn = document.getElementById("sendBtn");
+    const startersArea = document.getElementById("startersArea");
+    const typingIndicator = document.getElementById("typingIndicator");
+    const toggleWhy = document.getElementById("toggleWhy");
+    const safetyPanelContent = document.getElementById("safetyPanelContent");
+    const safetyPanel = document.getElementById("safetyPanel");
+    const toggleSafetyPanelBtn = document.getElementById("toggleSafetyPanelBtn");
+    const modalOverlay = document.getElementById("modalOverlay");
+    const modalImg = document.getElementById("modalImg");
+    const modalCloseBtn = document.getElementById("modalCloseBtn");
+
+    // Toggle Decision Details
+    toggleWhy.addEventListener("change", (e) => {
+      showWhyDetails = e.target.checked;
+      document.querySelectorAll(".why-line").forEach(el => {
+        el.style.display = showWhyDetails ? "block" : "none";
+      });
+    });
+
+    // Toggle Safety Panel
+    toggleSafetyPanelBtn.addEventListener("click", () => {
+      if (safetyPanel.style.display === "none") {
+        safetyPanel.style.display = "flex";
+      } else {
+        safetyPanel.style.display = "none";
+      }
+    });
+
+    // Modal controls
+    function openSourceModal(url, title) {
+      modalImg.src = url;
+      document.getElementById("modalTitle").innerText = title || "Source Document Page";
+      modalOverlay.style.display = "flex";
+    }
+
+    modalCloseBtn.addEventListener("click", () => {
+      modalOverlay.style.display = "none";
+      modalImg.src = "";
+    });
+
+    modalOverlay.addEventListener("click", (e) => {
+      if (e.target === modalOverlay) {
+        modalOverlay.style.display = "none";
+        modalImg.src = "";
+      }
+    });
+
+    // Escape HTML helper
+    function escapeHtml(str) {
+      if (!str) return "";
+      return str
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    // Append Message to UI
+    function appendMessage(role, text, options = {}) {
+      const row = document.createElement("div");
+      row.className = `message-row ${role}`;
+
+      const bubble = document.createElement("div");
+      bubble.className = "bubble";
+
+      const kind = options.kind || "normal";
+      if (kind.startsWith("red_")) {
+        bubble.classList.add("kind-red");
+      } else if (kind === "advice") {
+        bubble.classList.add("kind-advice");
+      } else if (kind === "error") {
+        bubble.classList.add("kind-error");
+      }
+
+      let contentHtml = "";
+      if (kind.startsWith("red_")) {
+        contentHtml += '<div class="safety-tag">Safety Escalation</div>';
+      } else if (kind === "advice") {
+        contentHtml += '<div class="advice-tag">Personal Advice</div>';
+      }
+
+      // Preserved verbatim text
+      contentHtml += escapeHtml(text);
+
+      // Citation & modal button
+      if (options.citation) {
+        contentHtml += `<div class="citation-bar">
+          <span>${escapeHtml(options.citation)}</span>
+          ${options.source_page_url ? `<button class="btn-view-source" onclick="openSourceModal('${options.source_page_url}', '${escapeHtml(options.citation)}')">📄 View source page</button>` : ''}
+        </div>`;
+      }
+
+      bubble.innerHTML = contentHtml;
+      row.appendChild(bubble);
+
+      // "Why" decision details line
+      if (role === "assistant" && options.why) {
+        const whyDiv = document.createElement("div");
+        whyDiv.className = "why-line";
+        whyDiv.style.display = showWhyDetails ? "block" : "none";
+
+        const w = options.why;
+        const details = [];
+        if (w.zone) details.push(`zone: ${w.zone}`);
+        if (w.red_type) details.push(`red_type: ${w.red_type}`);
+        if (w.intent) details.push(`intent: ${w.intent}`);
+        if (w.matched_id) details.push(`matched: ${w.matched_id}`);
+        if (w.score !== null && w.score !== undefined) details.push(`score: ${w.score}`);
+        if (w.scan_terms && w.scan_terms.length > 0) details.push(`safety words: ${JSON.stringify(w.scan_terms)}`);
+
+        whyDiv.innerText = `🔍 ${details.join(" · ")}${options.latency_ms ? ` · latency: ${options.latency_ms}ms` : ''}`;
+        row.appendChild(whyDiv);
+      }
+
+      messagesArea.appendChild(row);
+      messagesArea.scrollTop = messagesArea.scrollHeight;
+    }
+
+    // Send Message
+    async function sendMessage(msgText) {
+      if (!msgText || !msgText.trim()) return;
+      const text = msgText.trim();
+      messageInput.value = "";
+
+      // Add user message
+      appendMessage("user", text);
+
+      // Show typing indicator
+      typingIndicator.style.display = "flex";
+      messagesArea.scrollTop = messagesArea.scrollHeight;
+      sendBtn.disabled = true;
+
+      try {
+        const resp = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: text, session_id: sessionId })
+        });
+
+        if (!resp.ok) {
+          throw new Error("HTTP error " + resp.status);
+        }
+
+        const data = await resp.json();
+        typingIndicator.style.display = "none";
+        sendBtn.disabled = false;
+
+        appendMessage("assistant", data.reply_text, {
+          kind: data.kind,
+          citation: data.citation,
+          source_page_url: data.source_page_url,
+          why: data.why,
+          latency_ms: data.latency_ms
+        });
+
+      } catch (err) {
+        typingIndicator.style.display = "none";
+        sendBtn.disabled = false;
+        appendMessage("assistant", "Sorry, I can't answer right now. Please try again in a moment. If you're having side effects or need medical help, contact your healthcare provider.", {
+          kind: "error"
+        });
+      }
+    }
+
+    // Submit handler
+    chatForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      sendMessage(messageInput.value);
+    });
+
+    // Load Metadata (banner, safety panel, starters)
+    async function loadMeta() {
+      try {
+        const res = await fetch("/api/meta");
+        const meta = await res.json();
+
+        if (meta.banner) {
+          document.getElementById("banner").innerText = meta.banner;
+        }
+
+        if (meta.safety_panel) {
+          safetyPanelContent.innerText = meta.safety_panel;
+        }
+
+        if (meta.starters && meta.starters.length > 0) {
+          startersArea.innerHTML = "";
+          meta.starters.forEach(s => {
+            const chip = document.createElement("button");
+            chip.className = "starter-chip";
+            chip.innerText = s;
+            chip.onclick = () => sendMessage(s);
+            startersArea.appendChild(chip);
+          });
+        }
+      } catch (e) {
+        console.warn("Could not load /api/meta:", e);
+      }
+    }
+
+    loadMeta();
+  </script>
+</body>
+</html>
