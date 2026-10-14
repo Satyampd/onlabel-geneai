@@ -179,6 +179,58 @@ def get_embedding_batch(client, texts: list[str]) -> list[list[float]]:
     return all_vecs
 
 
+PROMPT_REPOINTER = """You are re-pointing a candidate Q&A item whose answer could not be found character-for-character in the source text due to minor punctuation, whitespace, or boundary issues.
+
+Target Question: {question}
+Attempted Answer: {attempted_answer}
+
+Source text:
+{source_text}
+
+Task:
+Find the EXACT passage in the source text that answers the question.
+Copy it 100% CHARACTER-FOR-CHARACTER from the source text with ZERO alterations.
+If a bullet list is extracted, include the introductory lead-in clause.
+
+Return ONLY valid JSON:
+{"repaired_parts": ["exact text snippet 1", "exact text snippet 2"]}
+"""
+
+
+def retry_pointer(client, item: dict, source_raw: str, source_norm: str) -> bool:
+    prompt = PROMPT_REPOINTER.format(
+        question=item.get("question", ""),
+        attempted_answer="\n".join(item.get("answer_parts", [])),
+        source_text=source_raw[:6000],
+    )
+    for attempt in range(2):
+        try:
+            resp = client.models.generate_content(
+                model=config.MODEL_PRO,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0,
+                    response_mime_type="application/json",
+                ),
+            )
+            data = parse_json_safely(resp.text)
+            new_parts = data.get("repaired_parts", []) if isinstance(data, dict) else []
+            if new_parts:
+                all_found = True
+                for p in new_parts:
+                    if normalise(p) not in source_norm:
+                        all_found = False
+                        break
+                if all_found:
+                    item["answer_parts"] = new_parts
+                    item["repaired"] = True
+                    return True
+        except Exception as e:
+            if attempt == 1:
+                print(f"  Retry pointer error for {item.get('id')}: {e}")
+    return False
+
+
 def cosine_sim(v1, v2) -> float:
     a = np.array(v1, dtype=np.float32)
     b = np.array(v2, dtype=np.float32)
@@ -404,9 +456,19 @@ def main():
                     phone_part_sample = (part, source_norm)
 
         found_in_source = (len(not_found_parts) == 0) and (len(answer_parts) > 0)
+
+        # Automated repair with retry_pointer if not found
+        if not found_in_source:
+            raw_src = mg_full_text if item["doc"] == "medication_guide" else br_page_data[item["citation"]["pdf_page"]]["text"]
+            if retry_pointer(client, item, raw_src, source_norm):
+                answer_parts = item["answer_parts"]
+                not_found_parts = []
+                found_in_source = True
+
         item["checks"] = {
             "found_in_source": found_in_source,
             "not_found_parts": not_found_parts,
+            "repaired": item.get("repaired", False),
         }
 
         # Build display text for found items
