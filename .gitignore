@@ -5,3 +5,15 @@ __pycache__/
 *$py.class
 *.env
 data/.cache_*
+
+# Log outputs
+data/log.jsonl
+
+# Node & Frontend testing dependencies
+node_modules/
+package-lock.json
+package.json
+
+# Test scripts and frontend screenshots
+*.js
+*.png

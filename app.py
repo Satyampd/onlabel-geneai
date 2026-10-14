@@ -16,6 +16,16 @@ st.set_page_config(
     layout="wide",
 )
 
+st.markdown("""
+<style>
+/* Make Streamlit chat bubbles look cleaner */
+.stChatMessage { border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+div[data-testid="stChatMessageContent"] { font-size: 1.05rem; }
+/* Hide standard Streamlit header elements for a cleaner UI */
+header[data-testid="stHeader"] { display: none; }
+</style>
+""", unsafe_allow_html=True)
+
 # Helper to load items
 @st.cache_data
 def load_all_items_data():
@@ -267,40 +277,35 @@ with tab_chat:
     # Render History
     for msg in st.session_state.chat_history:
         if msg["role"] == "user":
-            with st.chat_message("user"):
+            with st.chat_message("user", avatar="👤"):
                 st.write(msg["text"])
         else:
             turn = msg["turn"]
-            with st.chat_message("assistant"):
+            with st.chat_message("assistant", avatar="🛡️"):
                 # Style by kind
                 kind = turn.get("kind", "")
                 reply = turn.get("reply_text", "")
 
                 if kind.startswith("red_"):
-                    st.error(reply)
+                    st.error(f"🚨 **Safety Escalation:**\n\n{reply}")
                 elif kind == "advice":
-                    st.warning(reply)
+                    st.warning(f"ℹ️ **Guidance Note:**\n\n{reply}")
                 else:
                     st.markdown(reply)
 
-                # Show why line
+                # Show why line as cleaner expander
                 if show_why:
                     why = turn.get("why", {})
-                    zone_label = f"zone: {why.get('zone')}"
-                    details = []
-                    if why.get("red_type"):
-                        details.append(f"red_type: {why.get('red_type')}")
-                    if why.get("intent"):
-                        details.append(f"intent: {why.get('intent')}")
-                    if why.get("matched_id"):
-                        details.append(f"matched: {why.get('matched_id')}")
-                    if why.get("score") is not None:
-                        details.append(f"confidence: {why.get('score')}")
-                    if why.get("scan_terms"):
-                        details.append(f"safety words: {why.get('scan_terms')}")
-                    extra = " · ".join(details)
-                    why_line = f"{zone_label} · {extra}" if extra else zone_label
-                    st.caption(f"🔍 `{why_line}` · latency: {turn.get('latency_ms')}ms")
+                    with st.expander("🔍 Traceability & Reasoning", expanded=False):
+                        st.markdown(f"""
+                        - **Zone:** `{why.get('zone')}`
+                        - **Intent:** `{why.get('intent')}`
+                        - **Matched ID:** `{why.get('matched_id')}`
+                        - **Score:** `{why.get('score')}`
+                        - **Latency:** `{turn.get('latency_ms')}ms`
+                        """)
+                        if why.get("scan_terms"):
+                            st.markdown(f"- **Safety Words Detected:** `{why.get('scan_terms')}`")
 
                 # Source page expander
                 src = turn.get("source_page")
