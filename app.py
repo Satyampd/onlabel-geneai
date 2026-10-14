@@ -17,6 +17,7 @@ st.set_page_config(
 )
 
 # Helper to load items
+@st.cache_data
 def load_all_items_data():
     if not os.path.exists(config.ITEMS_JSON):
         return {"items": [], "built_at": "", "build_seconds": 0}
@@ -31,6 +32,7 @@ def load_all_items_data():
 def save_all_items_data(data):
     with open(config.ITEMS_JSON, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
+    load_all_items_data.clear()
 
 
 @st.cache_data
