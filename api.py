@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import Response, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -68,17 +69,24 @@ def chat(req: ChatRequest):
         source_page_url = f"api/page/{src['doc']}/{src['pdf_page']}.png?highlight={item_id}"
         snippet_url = f"api/snippet/{item_id}.png"
 
+    fig_data = turn_result.get("figure")
+    if fig_data and isinstance(fig_data, dict):
+        fig_url = fig_data.get("image_url", "").lstrip("/")
+        fig_data = dict(fig_data, image_url=fig_url)
+
     return {
         "reply_text": turn_result["reply_text"],
         "kind": turn_result["kind"],
         "answer": turn_result["answer"],
         "citation": turn_result["citation"],
         "source_label": turn_result.get("source_label"),
+        "figure": fig_data,
         "snippet_url": snippet_url,
         "source_page_url": source_page_url,
         "approval": turn_result.get("approval"),
         "why": turn_result["why"],
         "latency_ms": turn_result["latency_ms"],
+        "report_id": turn_result.get("report_id"),
     }
 
 
@@ -199,6 +207,42 @@ def console_ack(req: AckRequest):
         raise HTTPException(status_code=409, detail=str(e))
 
 
+class AEReportRequest(BaseModel):
+    report_id: str | None = Field(None, max_length=200)
+    session_id: str | None = Field(None, max_length=100)
+    reporter_type: str = Field("Patient", max_length=50)
+    patient_name: str = Field("", max_length=100)
+    contact: str = Field("", max_length=100)
+    onset_date: str = Field("", max_length=50)
+    severity: str = Field("Moderate", max_length=50)
+    doctor_contacted: str = Field("No", max_length=50)
+    description: str = Field(..., min_length=1, max_length=2000)
+    product_pen_issue: str = Field("", max_length=200)
+
+
+@app.post("/api/report/ae")
+def submit_ae_report(req: AEReportRequest):
+    try:
+        report = review.record_ae_form(
+            rid=req.report_id,
+            form_data={
+                "reporter_type": req.reporter_type.strip(),
+                "patient_name": req.patient_name.strip(),
+                "contact": req.contact.strip(),
+                "onset_date": req.onset_date.strip(),
+                "severity": req.severity.strip(),
+                "doctor_contacted": req.doctor_contacted.strip(),
+                "description": req.description.strip(),
+                "product_pen_issue": req.product_pen_issue.strip(),
+                "submitted_at": datetime.now().isoformat(timespec="seconds"),
+            },
+            session_id=req.session_id,
+        )
+        return {"status": "ok", "report": report}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @app.get("/api/console/activity")
 def console_activity():
     logs = review.load_logs()
@@ -216,6 +260,11 @@ def console_gaps():
         raise HTTPException(status_code=502, detail=f"Could not group the questions right now ({type(e).__name__})")
     return {"sample": False, "count": len(messages), "themes": themes}
 
+
+# Serve extracted figures
+figures_dir = os.path.join(os.path.dirname(__file__), "data", "figures")
+if os.path.exists(figures_dir):
+    app.mount("/api/figures", StaticFiles(directory=figures_dir), name="figures")
 
 # Serve frontend
 web_dir = os.path.join(os.path.dirname(__file__), "web")

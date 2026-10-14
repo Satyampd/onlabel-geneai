@@ -72,7 +72,7 @@ BANNER = (
 # Starter questions point at the full 3-zone demo spectrum (factual, advice, safety complaint).
 STARTERS = [
     "How does the auto-injector pen work?",
-    "How should I store my pen?",
+    "Does Kesimpta need to be refrigerated?",
     "Can I skip my monthly dose this week?",
     "My pen cracked when I took the cap off",
 ]

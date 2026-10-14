@@ -46,7 +46,8 @@
     chat: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12Z"/>',
     arrow: '<path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>',
     info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 7.5h.01"/>',
-    stamp: '<path d="M9 3h6l-1 7h-4L9 3Z"/><path d="M5 14a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v3H5v-3Z"/><path d="M5 21h14"/>'
+    stamp: '<path d="M9 3h6l-1 7h-4L9 3Z"/><path d="M5 14a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v3H5v-3Z"/><path d="M5 21h14"/>',
+    clipboard: '<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/>'
   };
   function icon(name, size, sw) { return svg(P[name] || "", size, sw); }
 
@@ -352,7 +353,11 @@
       return false;
     });
   }
-  function reportsSig(r) { return r.reports.map(function (x) { return x.id + ":" + x.report_status; }).join("|"); }
+  function reportsSig(r) {
+    return r.reports.map(function (x) {
+      return x.id + ":" + x.report_status + ":" + (x.ae_form ? (x.ae_form.submitted_at || "ae") : "");
+    }).join("|");
+  }
 
   function loadActivity(quiet) {
     return request("api/console/activity").then(function (d) {
@@ -1264,6 +1269,11 @@
       var sid = el("code", "report__sid", "session " + r.session_id.slice(0, 8));
       top.appendChild(sid);
     }
+    if (r.ae_form) {
+      var aebadge = el("span", "pill pill--ae");
+      append(aebadge, iconEl("clipboard", "", 12, 2), el("span", "", "AE Form Attached"));
+      top.appendChild(aebadge);
+    }
     var q = el("blockquote", "report__msg");
     append(q, iconEl("quote", "report__qicon", 26, 1.6), el("span", "", str(r.message)));
     var terms = Array.isArray(r.scan_terms) ? r.scan_terms.filter(isStr) : [];
@@ -1273,6 +1283,34 @@
       append(chips, el("span", "report__termslabel", "Safety words"));
       terms.forEach(function (t) { chips.appendChild(el("span", "sterm", t)); });
     }
+    var aeBox = null;
+    if (r.ae_form) {
+      var ae = r.ae_form;
+      aeBox = el("div", "report__ae");
+      var aeHead = el("div", "report__aehead");
+      append(aeHead, iconEl("clipboard", "report__aeicon", 14), el("span", "report__aetitle", "Patient Adverse Event Intake Form"));
+      if (ae.submitted_at) aeHead.appendChild(el("span", "report__aetime", "Submitted " + fmtTime(ae.submitted_at)));
+
+      var aelist = el("div", "report__aegrid");
+      var addF = function(lbl, val, cls) {
+        if (!val) return;
+        var f = el("div", "report__aefield");
+        append(f, el("span", "report__aelabel", lbl + ": "), el("span", "report__aeval" + (cls ? " " + cls : ""), val));
+        aelist.appendChild(f);
+      };
+      var reporterStr = (ae.patient_name ? ae.patient_name + " · " : "") + (ae.reporter_type || "Patient");
+      addF("Reporter", reporterStr);
+      addF("Onset date", ae.onset_date);
+      addF("Severity", ae.severity, "sterm sterm--sev");
+      addF("Doctor contacted", ae.doctor_contacted);
+      if (ae.contact) addF("Contact", ae.contact);
+      if (ae.product_pen_issue) addF("Pen / Lot issue", ae.product_pen_issue);
+
+      var aedesc = el("div", "report__aedesc");
+      append(aedesc, el("span", "report__aelabel", "Event description: "), el("span", "report__aetext", ae.description || ""));
+
+      append(aeBox, aeHead, aelist, aedesc);
+    }
     var foot = el("div", "report__foot");
     var bits = [];
     if (isStr(r.zone)) bits.push("zone " + r.zone);
@@ -1280,7 +1318,7 @@
     if (typeof r.latency_ms === "number") bits.push(Math.round(r.latency_ms) + " ms");
     append(foot, el("span", "", "Escalated automatically · " + bits.join(" · ")));
     if (isStr(r.model_reason)) append(foot, el("span", "report__reason", "Gemini: " + r.model_reason));
-    append(main, top, q, chips, foot);
+    append(main, top, q, chips, aeBox, foot);
 
     var side = el("div", "report__side");
     if (open) {

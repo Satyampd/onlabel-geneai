@@ -209,6 +209,56 @@ body {
 .snippet.is-loaded img { animation: page-reveal .9s var(--ease) both; }
 .img-error { margin: 0; font-size: .86rem; color: var(--muted); }
 
+/* Embedded Figure Diagrams */
+.fig-card {
+  margin: 14px 0 6px;
+  padding: 8px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid var(--hair-strong, #E2E8F0);
+  box-shadow: 0 4px 16px -4px rgba(15, 23, 42, 0.08);
+  overflow: hidden;
+  max-width: 540px;
+}
+.fig-card__link {
+  display: block;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #FAFAFC;
+  text-align: center;
+  cursor: zoom-in;
+}
+.fig-card__img {
+  display: block;
+  max-width: 100%;
+  max-height: 280px;
+  width: auto;
+  margin: 0 auto;
+  object-fit: contain;
+  transition: transform 0.25s var(--ease);
+}
+.fig-card__link:hover .fig-card__img {
+  transform: scale(1.02);
+}
+.fig-card__cap {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 4px 6px;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--ink-soft, #475569);
+}
+.fig-card__cap svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: #4F46E5;
+}
+.fig-card__text {
+  flex: 1;
+}
+
 .source {
   display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px;
   margin-top: 12px; padding-left: 10px; border-left: 2px solid rgba(99, 102, 241, .55);
@@ -413,4 +463,205 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .aurora::before, .aurora::after, .aurora span, .hero__mesh { animation: none !important; }
+}
+
+/* =====================================================================
+   Adverse Event (AE) Intake Form in Chat
+   ===================================================================== */
+.ae-card {
+  margin-top: 14px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: #FFFFFF;
+  border: 1px solid #FECACA;
+  box-shadow: 0 2px 10px rgba(220, 38, 38, .06);
+}
+.ae-card__header {
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #FEE2E2;
+}
+.ae-card__title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ae-card__icon {
+  color: #DC2626;
+  display: flex;
+  align-items: center;
+}
+.ae-card__title {
+  font-family: var(--font-display, inherit);
+  font-size: .98rem;
+  font-weight: 600;
+  color: #991B1B;
+}
+.ae-card__pill {
+  margin-left: auto;
+  font-size: .72rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #991B1B;
+  background: #FEE2E2;
+}
+.ae-card__sub {
+  margin: 4px 0 0;
+  font-size: .8rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.ae-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ae-grid {
+  display: grid;
+  gap: 10px;
+}
+.ae-grid--2 {
+  grid-template-columns: 1fr 1fr;
+}
+@media (max-width: 600px) {
+  .ae-grid--2 { grid-template-columns: 1fr; }
+}
+.ae-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ae-label {
+  font-size: .78rem;
+  font-weight: 550;
+  color: #475569;
+}
+.ae-muted {
+  font-weight: normal;
+  color: var(--muted);
+  font-size: .74rem;
+}
+.ae-req {
+  color: #DC2626;
+}
+.ae-input, .ae-select, .ae-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  border: 1px solid #CBD5E1;
+  border-radius: 6px;
+  font-size: .86rem;
+  color: var(--ink);
+  background: #F8FAFC;
+  transition: border-color .15s ease, background-color .15s ease;
+  font-family: inherit;
+}
+.ae-input:focus, .ae-select:focus, .ae-textarea:focus {
+  outline: none;
+  border-color: #DC2626;
+  background: #FFFFFF;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, .12);
+}
+.ae-input--error {
+  border-color: #DC2626 !important;
+  background: #FFF1F2 !important;
+}
+.ae-textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+.ae-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+.ae-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 7px;
+  border: none;
+  background: #DC2626;
+  color: #FFFFFF;
+  font-size: .86rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s ease, opacity .15s ease;
+}
+.ae-submit:hover:not(:disabled) {
+  background: #B91C1C;
+}
+.ae-submit:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+.ae-disclaimer {
+  margin: 0;
+  font-size: .72rem;
+  line-height: 1.35;
+  color: #94A3B8;
+  text-align: center;
+}
+
+/* Confirmed state */
+.ae-card--confirmed {
+  border-color: #A7F3D0;
+  background: #F0FDF4;
+  box-shadow: 0 2px 10px rgba(5, 150, 105, .06);
+}
+.ae-conf__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.ae-conf__check {
+  color: #059669;
+  display: flex;
+  align-items: center;
+}
+.ae-conf__title {
+  font-size: .96rem;
+  font-weight: 600;
+  color: #065F46;
+}
+.ae-conf__body {
+  font-size: .82rem;
+  color: #1E293B;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.ae-conf__line {
+  margin: 0;
+}
+.ae-conf__tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: .74rem;
+  font-weight: 600;
+  color: #B91C1C;
+  background: #FEE2E2;
+}
+.ae-conf__sev {
+  font-weight: 600;
+  color: #991B1B;
+}
+.ae-conf__desc {
+  margin: 4px 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #FFFFFF;
+  border: 1px solid #D1FAE5;
+  font-style: italic;
+}
+.ae-conf__foot {
+  margin: 4px 0 0;
+  font-size: .75rem;
+  color: #047857;
 }

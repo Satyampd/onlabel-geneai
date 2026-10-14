@@ -37,7 +37,10 @@
     check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
     external: '<path d="M14 4h6v6"/><path d="M20 4 11 13"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/>',
     arrow: '<path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>',
-    log: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="M9 11h6"/><path d="M9 15h4"/>'
+    log: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="M9 11h6"/><path d="M9 15h4"/>',
+    image: '<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',
+    clipboard: '<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/>',
+    send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>'
   };
   function icon(name, size) { return SVG_OPEN.replace(/WS/g, String(size || 16)) + P[name] + "</svg>"; }
 
@@ -96,6 +99,13 @@
     if (className) node.className = className;
     if (text !== undefined && text !== null) node.textContent = String(text);
     return node;
+  }
+
+  function append(parent) {
+    for (var i = 1; i < arguments.length; i++) {
+      if (arguments[i]) parent.appendChild(arguments[i]);
+    }
+    return parent;
   }
 
   function iconEl(name, size, className) {
@@ -260,6 +270,199 @@
     return pill;
   }
 
+  function buildAEFormCard(data) {
+    var card = el("div", "ae-card");
+    var header = el("div", "ae-card__header");
+    var titleRow = el("div", "ae-card__title-row");
+    append(titleRow, iconEl("clipboard", 15, "ae-card__icon"), el("span", "ae-card__title", "Report Adverse Event (AE) · Demo Form"), el("span", "ae-card__pill", "Intake Form"));
+    var sub = el("p", "ae-card__sub", "Record details for pharmacovigilance safety follow-up. For medical emergencies, call 911 or your doctor immediately.");
+    append(header, titleRow, sub);
+
+    var form = el("form", "ae-form");
+
+    // Row 1: Reporter role, Patient name
+    var row1 = el("div", "ae-grid ae-grid--2");
+    
+    var fRole = el("div", "ae-field");
+    var lRole = el("label", "ae-label", "Reporter role");
+    var selRole = el("select", "ae-select");
+    [["Patient", "Patient"], ["Caregiver", "Caregiver / Family"], ["HCP", "Healthcare Provider"]].forEach(function (opt) {
+      var o = el("option", "", opt[1]);
+      o.value = opt[0];
+      selRole.appendChild(o);
+    });
+    append(fRole, lRole, selRole);
+
+    var fName = el("div", "ae-field");
+    var lName = el("label", "ae-label");
+    append(lName, el("span", "", "Patient name / initials "), el("span", "ae-muted", "(optional)"));
+    var inName = el("input", "ae-input");
+    inName.type = "text";
+    inName.placeholder = "e.g. Jane D.";
+    append(fName, lName, inName);
+    append(row1, fRole, fName);
+
+    // Row 2: When did symptoms start?, Severity level
+    var row2 = el("div", "ae-grid ae-grid--2");
+    
+    var fDate = el("div", "ae-field");
+    var lDate = el("label", "ae-label", "When did symptoms start?");
+    var inDate = el("input", "ae-input");
+    inDate.type = "date";
+    try {
+      inDate.value = new Date().toISOString().slice(0, 10);
+    } catch (e) {}
+    append(fDate, lDate, inDate);
+
+    var fSev = el("div", "ae-field");
+    var lSev = el("label", "ae-label", "Severity level");
+    var selSev = el("select", "ae-select");
+    [
+      ["Mild", "Mild (bothersome, daily life unaffected)"],
+      ["Moderate", "Moderate (interfered with daily activities)"],
+      ["Severe", "Severe (prevented daily activities / sought care)"],
+      ["Urgent / Emergency", "Urgent / Emergency (sought immediate care)"]
+    ].forEach(function (opt, idx) {
+      var o = el("option", "", opt[1]);
+      o.value = opt[0];
+      if (idx === 1) o.selected = true;
+      selSev.appendChild(o);
+    });
+    append(fSev, lSev, selSev);
+    append(row2, fDate, fSev);
+
+    // Row 3: HCP contacted?, Contact phone/email
+    var row3 = el("div", "ae-grid ae-grid--2");
+    
+    var fHcp = el("div", "ae-field");
+    var lHcp = el("label", "ae-label", "Doctor / clinic contacted?");
+    var selHcp = el("select", "ae-select");
+    [
+      ["No", "No"],
+      ["Yes, called doctor", "Yes, called doctor / clinic"],
+      ["Yes, visited ER / Urgent Care", "Yes, visited ER / Urgent Care"],
+      ["Planning to contact", "Planning to contact today"]
+    ].forEach(function (opt) {
+      var o = el("option", "", opt[1]);
+      o.value = opt[0];
+      selHcp.appendChild(o);
+    });
+    append(fHcp, lHcp, selHcp);
+
+    var fContact = el("div", "ae-field");
+    var lContact = el("label", "ae-label");
+    append(lContact, el("span", "", "Contact phone or email "), el("span", "ae-muted", "(optional)"));
+    var inContact = el("input", "ae-input");
+    inContact.type = "text";
+    inContact.placeholder = "e.g. jane@example.com";
+    append(fContact, lContact, inContact);
+    append(row3, fHcp, fContact);
+
+    // Row 4: Event description (required)
+    var fDesc = el("div", "ae-field");
+    var lDesc = el("label", "ae-label");
+    append(lDesc, el("span", "", "Symptom / event description "), el("span", "ae-req", "*"));
+    var txtDesc = el("textarea", "ae-textarea");
+    txtDesc.rows = 3;
+    txtDesc.placeholder = "Describe what happened or what you experienced...";
+    if (data && data.user_message) {
+      txtDesc.value = data.user_message;
+    }
+    append(fDesc, lDesc, txtDesc);
+
+    // Row 5: Pen / Lot note (optional)
+    var fPen = el("div", "ae-field");
+    var lPen = el("label", "ae-label");
+    append(lPen, el("span", "", "Sensoready pen / lot issue "), el("span", "ae-muted", "(optional)"));
+    var inPen = el("input", "ae-input");
+    inPen.type = "text";
+    inPen.placeholder = "e.g. Pen cracked / lot # if known";
+    append(fPen, lPen, inPen);
+
+    // Actions
+    var actions = el("div", "ae-actions");
+    var submitBtn = el("button", "ae-submit");
+    submitBtn.type = "submit";
+    append(submitBtn, iconEl("send", 14), el("span", "", "Submit AE Report"));
+
+    var disclaimer = el("p", "ae-disclaimer", "Demo prototype: reports submitted here are saved to the reviewer safety queue for demonstration and are not sent to Novartis or FDA.");
+    append(actions, submitBtn, disclaimer);
+
+    append(form, row1, row2, row3, fDesc, fPen, actions);
+    append(card, header, form);
+
+    // Handle submit
+    form.addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var descVal = txtDesc.value.trim();
+      if (!descVal) {
+        txtDesc.focus();
+        txtDesc.classList.add("ae-input--error");
+        return;
+      }
+      txtDesc.classList.remove("ae-input--error");
+      submitBtn.disabled = true;
+      submitBtn.classList.add("is-loading");
+      submitBtn.lastChild.textContent = "Submitting report...";
+
+      var payload = {
+        report_id: (data && data.report_id) ? data.report_id : null,
+        session_id: state.sessionId,
+        reporter_type: selRole.value,
+        patient_name: inName.value.trim(),
+        contact: inContact.value.trim(),
+        onset_date: inDate.value.trim(),
+        severity: selSev.value,
+        doctor_contacted: selHcp.value,
+        description: descVal,
+        product_pen_issue: inPen.value.trim()
+      };
+
+      fetch("api/report/ae", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      })
+      .then(function (res) {
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+      })
+      .then(function () {
+        card.replaceChildren();
+        card.classList.add("ae-card--confirmed");
+        var confHead = el("div", "ae-conf__head");
+        append(confHead, iconEl("check", 18, "ae-conf__check"), el("div", "ae-conf__title", "Adverse Event Report Logged"));
+        
+        var confBody = el("div", "ae-conf__body");
+        var line1 = el("p", "ae-conf__line");
+        append(line1, el("strong", "", "Report Status: "), el("span", "ae-conf__tag", "Open in Safety Queue"));
+        
+        var line2 = el("p", "ae-conf__line");
+        append(line2, el("strong", "", "Reporter: "), el("span", "", (payload.patient_name || "Anonymous") + " (" + payload.reporter_type + ")"));
+        
+        var line3 = el("p", "ae-conf__line");
+        append(line3, el("strong", "", "Severity: "), el("span", "ae-conf__sev", payload.severity), el("span", "", " · Onset: " + (payload.onset_date || "today")));
+        
+        var line4 = el("p", "ae-conf__desc");
+        append(line4, el("strong", "", "Recorded description: "), el("span", "", "“" + payload.description + "”"));
+        
+        var confFoot = el("p", "ae-conf__foot", "This report is now logged for pharmacovigilance review in the Reviewer Console. If your symptoms worsen, seek medical attention immediately.");
+        
+        append(confBody, line1, line2, line3, line4, confFoot);
+        append(card, confHead, confBody);
+        reveal(card);
+      })
+      .catch(function (err) {
+        submitBtn.disabled = false;
+        submitBtn.classList.remove("is-loading");
+        submitBtn.lastChild.textContent = "Submit AE Report";
+        alert("Could not submit the report: " + (err.message || "Unknown error"));
+      });
+    });
+
+    return card;
+  }
+
   /** Render one assistant reply from the API payload (or a client-side error). */
   function addBotMessage(data) {
     var kindKey = kindOf(data);
@@ -283,6 +486,7 @@
       foot.appendChild(iconEl("log", 14));
       foot.appendChild(el("span", "", "Logged for review by a person"));
       box.appendChild(foot);
+      box.appendChild(buildAEFormCard(data));
     }
 
     var why = buildWhy(data);
@@ -306,6 +510,14 @@
       var b = textBlocks(replyText, "reply");
       if (squash(b.text) !== squash(replyText)) container.appendChild(el("p", "reply", replyText));
       else container.appendChild(b.node);
+      if (data && data.figure) {
+        var figCard = buildFigure(data.figure);
+        if (figCard) container.appendChild(figCard);
+      }
+      if (data && isMatchKind(kindKey)) {
+        var ev = buildEvidence(data);
+        if (ev) container.appendChild(ev);
+      }
     };
     if (idx < 0) { plainFallback(); return; }
 
@@ -322,6 +534,10 @@
     var ans = el("div", "answer" + (kindKey === "related" ? " answer--related" : ""));
     ans.appendChild(body.node);
     parts.appendChild(ans);
+    if (data && data.figure) {
+      var figCard = buildFigure(data.figure);
+      if (figCard) parts.appendChild(figCard);
+    }
     if (data && isMatchKind(kindKey)) {
       var ev = buildEvidence(data);
       if (ev) parts.appendChild(ev);
@@ -337,6 +553,34 @@
   /** Grey reply for network failures / timeouts / bad responses. */
   function addErrorMessage() {
     addBotMessage({ kind: "error", reply_text: state.meta.error_text });
+  }
+
+  /* ---------- Figure card: official document diagram/illustration ---------- */
+  function buildFigure(fig) {
+    if (!fig || !fig.image_url) return null;
+    var wrap = el("figure", "fig-card");
+    var a = el("a", "fig-card__link");
+    a.href = fig.image_url;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.setAttribute("aria-label", "View official figure full size: " + (fig.caption || "Illustration"));
+
+    var img = document.createElement("img");
+    img.className = "fig-card__img";
+    img.src = fig.image_url;
+    img.alt = fig.caption || "Official brochure figure";
+    img.loading = "lazy";
+    img.addEventListener("error", function () { wrap.remove(); });
+    a.appendChild(img);
+    wrap.appendChild(a);
+
+    if (fig.caption) {
+      var cap = el("figcaption", "fig-card__cap");
+      cap.appendChild(iconEl("image", 14));
+      cap.appendChild(el("span", "fig-card__text", fig.caption));
+      wrap.appendChild(cap);
+    }
+    return wrap;
   }
 
   /* ---------- Evidence: one source line (View page opens the highlighted page) ---------- */
@@ -517,7 +761,10 @@
       .then(function (data) {
         typing.remove();
         if (!data || typeof data !== "object" || !isStr(data.reply_text)) addErrorMessage();
-        else addBotMessage(data);
+        else {
+          data.user_message = message;
+          addBotMessage(data);
+        }
       })
       .catch(function () {
         typing.remove();

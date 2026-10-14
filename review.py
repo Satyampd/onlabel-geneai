@@ -174,6 +174,59 @@ def acknowledge(rid: str, reviewer: str) -> dict:
     return dict(hit, id=rid)
 
 
+def record_ae_form(rid: str | None, form_data: dict, session_id: str | None = None) -> dict:
+    """Attach a patient's submitted Adverse Event form to the corresponding safety report log entry."""
+    with _write_lock:
+        logs = load_logs()
+        hit = None
+        # 1. Try matching by report_id
+        if rid:
+            for entry in reversed(logs):
+                if report_id(entry) == rid:
+                    entry["ae_form"] = form_data
+                    hit = entry
+                    break
+        # 2. Try matching by session_id latest report
+        if hit is None and session_id:
+            for entry in reversed(logs):
+                if entry.get("session_id") == session_id and entry.get("report_status") is not None:
+                    entry["ae_form"] = form_data
+                    hit = entry
+                    break
+        # 3. If standalone or not found, create new safety report entry
+        if hit is None:
+            ts = datetime.now().isoformat()
+            sid = session_id or f"sess-{datetime.now().strftime('%H%M%S')}"
+            hit = {
+                "ts": ts,
+                "session_id": sid,
+                "message": form_data.get("description", "Adverse Event form submitted"),
+                "scan_terms": ["ae_form_submission"],
+                "zone": "red",
+                "red_type": "side_effect",
+                "intent": "side_effects",
+                "model_reason": "Direct patient adverse event form submission",
+                "route": "red_side_effect",
+                "matched_id": None,
+                "score": None,
+                "verbatim_ok": True,
+                "latency_ms": 0,
+                "report_status": "open",
+                "ack_by": None,
+                "ack_ts": None,
+                "eval": False,
+                "ae_form": form_data,
+            }
+            logs.append(hit)
+
+        def _write(f):
+            for entry in logs:
+                f.write(json.dumps(entry) + "\n")
+        atomic_write(config.LOG_JSONL, _write)
+
+        return dict(hit, id=report_id(hit))
+
+
 def unanswered(logs: list[dict]) -> list[str]:
     return [l.get("message") for l in logs
             if l.get("route") in ("no_answer", "related") and not l.get("eval") and l.get("message")]

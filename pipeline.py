@@ -333,7 +333,7 @@ def answer_turn(message: str, session_id: str, eval: bool = False) -> dict:
     zone, red_type, intent, model_reason = "error", None, "error", ""
     kind, reply_text = "error", TEMPLATE_ERROR
     answer = citation = source_page = matched_id = score = None
-    source_label = approval = None
+    source_label = approval = figure = None
     verbatim_ok = True
 
     try:
@@ -391,6 +391,7 @@ def answer_turn(message: str, session_id: str, eval: bool = False) -> dict:
                     "item_id": best_item["id"],
                 }
                 source_label = citation.removeprefix("Source: ")
+                figure = best_item.get("figure")
                 review = best_item.get("review") or {}
                 if review.get("reviewer"):
                     approval = {"reviewer": review["reviewer"], "ts": review.get("ts", "")}
@@ -455,6 +456,8 @@ def answer_turn(message: str, session_id: str, eval: bool = False) -> dict:
     except Exception as e:
         print(f"Warning: Failed to write to log.jsonl: {e}")
 
+    report_id = f"{log_entry['ts']}|{session_id}" if log_entry["report_status"] else None
+
     return {
         "reply_text": reply_text,
         "kind": kind,
@@ -462,7 +465,9 @@ def answer_turn(message: str, session_id: str, eval: bool = False) -> dict:
         "citation": citation,
         "source_page": source_page,
         "source_label": source_label,
+        "figure": figure,
         "approval": approval,
         "why": why,
         "latency_ms": round(latency_ms, 2),
+        "report_id": report_id,
     }
