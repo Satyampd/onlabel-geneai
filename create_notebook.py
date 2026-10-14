@@ -37,7 +37,16 @@ from IPython.display import display, HTML
 
 from google import genai
 from google.genai import types
+
 import config
+
+try:
+    with open("data/figures_catalog.json", "r") as f:
+        figures_catalog = json.load(f).get("figures", [])
+        print(f"Loaded {len(figures_catalog)} figures from catalog.")
+except Exception as e:
+    figures_catalog = []
+    print("No figure catalog found. Run extract_figures.py first.")
 
 print(f"Vertex AI Project: {config.PROJECT_ID}")
 print(f"Vertex AI Location: {config.LOCATION}")
@@ -99,6 +108,13 @@ cells.append(nbf.v4.new_code_cell("""PROMPT_GEN_MED_GUIDE = \"\"\"You are buildi
 Document text:
 {doc_text}
 
+
+   - "page": integer page number
+   - "figure_id": (optional) If one of the available figures below perfectly illustrates this answer, provide its exact ID.
+
+Available Figures for Brochure Page {page_num}:
+{figures_context}
+
 Rules:
 1. Extract self-contained, high-value Q&A items that patients ask.
 2. For each item:
@@ -109,7 +125,12 @@ Rules:
    - "answer_parts": list of exact text passages copied CHARACTER-FOR-CHARACTER from the text.
    - "citation": human-readable section title and page
    - "doc": "medication_guide"
+
    - "page": integer page number (1 to 4)
+   - "figure_id": (optional) If one of the available figures perfectly illustrates the answer, provide its exact ID here.
+
+Available Figures for this document:
+{figures_context}
 
 CRITICAL QUALITY INVARIANTS:
 - COMPLETE LEAD-IN: If an answer includes bullet points from a list, ALWAYS include the introductory lead-in clause (e.g. "Tell your healthcare provider before taking KESIMPTA if you:").
@@ -124,11 +145,16 @@ mg_full_text = "\\n\\n--- PAGE SEPARATOR ---\\n\\n".join(
     f"=== PAGE {p['page_num']} ===\\n{p['text']}" for p in mg_data
 )
 
+
+mg_figures = [f for f in figures_catalog if f.get("doc") == "medication_guide"]
+mg_fig_text = "\n".join([f"- {f['id']} (Page {f['page']}): {f['caption']}" for f in mg_figures]) if mg_figures else "None available."
+
 print(f"Generating Medication Guide items with {config.MODEL_PRO}...")
 t0 = time.time()
+prompt_mg_rendered = PROMPT_GEN_MED_GUIDE.replace("{doc_text}", mg_full_text).replace("{figures_context}", mg_fig_text)
 resp_mg = client.models.generate_content(
     model=config.MODEL_PRO,
-    contents=PROMPT_GEN_MED_GUIDE.replace("{doc_text}", mg_full_text),
+    contents=prompt_mg_rendered,
     config=types.GenerateContentConfig(
         temperature=0.1,
         response_mime_type="application/json"
@@ -171,6 +197,13 @@ The Medication Guide ALREADY covers these clinical topics:
 
 Brochure text for Page {page_num}:
 {doc_text}
+
+
+   - "page": integer page number
+   - "figure_id": (optional) If one of the available figures below perfectly illustrates this answer, provide its exact ID.
+
+Available Figures for Brochure Page {page_num}:
+{figures_context}
 
 Rules:
 1. Extract items that are UNIQUE to this brochure page (e.g. pen design, clicks, co-pay savings, injection experience).
