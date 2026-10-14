@@ -18,4 +18,5 @@ package.json
 *.js
 !web/*.js
 *.png
+!data/figures/*.png
 

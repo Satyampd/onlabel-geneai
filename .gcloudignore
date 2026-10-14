@@ -1,0 +1,19 @@
+.gcloudignore
+.git
+.gitignore
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+data/.cache_*
+
+# Node modules
+node_modules/
+package-lock.json
+package.json
+
+# Exclude temporary PNGs but preserve official figures!
+*.png
+!data/figures/*.png
