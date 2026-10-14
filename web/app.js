@@ -558,19 +558,39 @@
   /* ---------- Figure card: official document diagram/illustration ---------- */
   function buildFigure(fig) {
     if (!fig || !fig.image_url) return null;
+    var rawUrl = fig.image_url;
+    var imgUrl = rawUrl.indexOf("/") === 0 || rawUrl.indexOf("http") === 0 ? rawUrl : ("/" + rawUrl);
+
     var wrap = el("figure", "fig-card");
     var a = el("a", "fig-card__link");
-    a.href = fig.image_url;
-    a.target = "_blank";
-    a.rel = "noopener noreferrer";
+    a.href = imgUrl;
     a.setAttribute("aria-label", "View official figure full size: " + (fig.caption || "Illustration"));
 
     var img = document.createElement("img");
     img.className = "fig-card__img";
-    img.src = fig.image_url;
     img.alt = fig.caption || "Official brochure figure";
-    img.loading = "lazy";
-    img.addEventListener("error", function () { wrap.remove(); });
+    img.decoding = "sync";
+
+    // Clicking image zooms inside the drawer
+    a.addEventListener("click", function (e) {
+      e.preventDefault();
+      openSourceDrawer(imgUrl, fig.caption || "Official Document Figure", a);
+    });
+
+    img.addEventListener("error", function () {
+      console.warn("Figure image failed to render directly:", imgUrl);
+      img.remove();
+      var errNotice = el("div", "fig-card__error");
+      errNotice.appendChild(iconEl("image", 16));
+      errNotice.appendChild(el("span", "", "Diagram available: "));
+      var link = el("a", "textlink", "Open diagram full size");
+      link.href = imgUrl;
+      link.target = "_blank";
+      errNotice.appendChild(link);
+      a.appendChild(errNotice);
+    });
+
+    img.src = imgUrl;
     a.appendChild(img);
     wrap.appendChild(a);
 
@@ -583,14 +603,38 @@
     return wrap;
   }
 
-  /* ---------- Evidence: one source line (View page opens the highlighted page) ---------- */
+  /* ---------- Evidence: source snippet crop and citation line ---------- */
   function buildEvidence(data) {
-    var page = safeUrl(data.source_page_url);
-    if (!page && !isStr(data.source_label)) return null;
+    var rawPage = safeUrl(data.source_page_url);
+    var rawSnippet = safeUrl(data.snippet_url);
+    if (!rawPage && !rawSnippet && !isStr(data.source_label)) return null;
 
+    var page = rawPage ? (rawPage.indexOf("/") === 0 || rawPage.indexOf("http") === 0 ? rawPage : ("/" + rawPage)) : null;
+    var snippet = rawSnippet ? (rawSnippet.indexOf("/") === 0 || rawSnippet.indexOf("http") === 0 ? rawSnippet : ("/" + rawSnippet)) : null;
     var label = isStr(data.source_label) ? data.source_label : null;
+
     var wrap = el("section", "evidence");
     wrap.setAttribute("aria-label", "Source evidence");
+
+    // If snippet crop exists and item doesn't have an official figure (or along with it)
+    if (snippet && (!data.figure || !data.figure.image_url)) {
+      var btn = el("button", "snippet");
+      btn.type = "button";
+      btn.setAttribute("aria-label", "Open full source page with highlighted passage");
+      var sImg = document.createElement("img");
+      sImg.alt = label ? "Approved source snippet: " + label : "Approved source snippet";
+      sImg.addEventListener("load", function () { btn.classList.add("is-loaded"); });
+      sImg.addEventListener("error", function () {
+        console.warn("Snippet image unavailable:", snippet);
+        btn.remove();
+      });
+      sImg.src = snippet;
+      btn.appendChild(sImg);
+      if (page) {
+        btn.addEventListener("click", function () { openSourceDrawer(page, label, btn); });
+      }
+      wrap.appendChild(btn);
+    }
 
     // Source line: name (medium) · pages (muted) · View page
     var src = el("div", "source");
@@ -606,12 +650,12 @@
       src.appendChild(el("span", "source__name", "Approved source"));
     }
     if (page) {
-      var btn = el("button", "textlink");
-      btn.type = "button";
-      btn.appendChild(el("span", "", "View page"));
-      btn.appendChild(iconEl("arrow", 13));
-      btn.addEventListener("click", function () { openSourceDrawer(page, label, btn); });
-      src.appendChild(btn);
+      var textBtn = el("button", "textlink");
+      textBtn.type = "button";
+      textBtn.appendChild(el("span", "", "View page"));
+      textBtn.appendChild(iconEl("arrow", 13));
+      textBtn.addEventListener("click", function () { openSourceDrawer(page, label, textBtn); });
+      src.appendChild(textBtn);
     }
     wrap.appendChild(src);
 
@@ -682,6 +726,9 @@
   }
 
   function openSourceDrawer(url, label, opener) {
+    if (url && typeof url === "string" && !url.startsWith("/") && !url.startsWith("http")) {
+      url = "/" + url;
+    }
     var wrap = el("div", "pagewrap");
     var a = el("a", "page-link");
     a.href = url;

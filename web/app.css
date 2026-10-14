@@ -258,6 +258,15 @@ body {
 .fig-card__text {
   flex: 1;
 }
+.fig-card__error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px;
+  font-size: 0.86rem;
+  color: var(--muted, #64748B);
+}
 
 .source {
   display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px;

@@ -1,7 +1,7 @@
 import os
 from datetime import datetime
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import Response, FileResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import Response, FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 from urllib.parse import quote
@@ -61,18 +61,18 @@ class ChatRequest(BaseModel):
 def chat(req: ChatRequest):
     turn_result = pipeline.answer_turn(req.message, session_id=req.session_id)
 
-    # Relative URLs, so the UI also works behind a path-prefix proxy (Workbench, Code Editor).
+    # Root-relative URLs for reliable browser resolution across any base path
     src = turn_result.get("source_page")
     source_page_url = snippet_url = None
     if src:
         item_id = quote(src["item_id"], safe="")
-        source_page_url = f"api/page/{src['doc']}/{src['pdf_page']}.png?highlight={item_id}"
-        snippet_url = f"api/snippet/{item_id}.png"
+        source_page_url = f"/api/page/{src['doc']}/{src['pdf_page']}.png?highlight={item_id}"
+        snippet_url = f"/api/snippet/{item_id}.png"
 
     fig_data = turn_result.get("figure")
     if fig_data and isinstance(fig_data, dict):
-        fig_url = fig_data.get("image_url", "").lstrip("/")
-        fig_data = dict(fig_data, image_url=fig_url)
+        raw_url = fig_data.get("image_url", "").lstrip("/")
+        fig_data = dict(fig_data, image_url=f"/{raw_url}")
 
     return {
         "reply_text": turn_result["reply_text"],
@@ -288,3 +288,9 @@ if os.path.exists(web_dir):
     @app.get("/console")
     def console_page_html():
         return _page("console.html")
+
+    # Alias /console/api requests to /api to prevent 404s when accessed with trailing slash
+    @app.api_route("/console/api/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+    def console_api_alias(path: str, request: Request):
+        q = f"?{request.url.query}" if request.url.query else ""
+        return RedirectResponse(url=f"/api/{path}{q}", status_code=307)

@@ -172,12 +172,15 @@
   /** Relative image URL for an item id (the id is encoded, never trusted as a path). */
   function itemImg(kind, id) {
     if (!isStr(id)) return null;
-    return "api/console/" + (kind === "page" ? "page" : "snippet") + "/" + encodeURIComponent(id) + ".png";
+    return "/api/console/" + (kind === "page" ? "page" : "snippet") + "/" + encodeURIComponent(id) + ".png";
   }
 
   /* ---------- Fetch with timeout; errors carry the server's detail ---------- */
   function request(url, opts) {
     opts = opts || {};
+    if (typeof url === "string" && !url.startsWith("/") && !url.startsWith("http")) {
+      url = "/" + url;
+    }
     var controller = typeof AbortController === "function" ? new AbortController() : null;
     var timer = setTimeout(function () { if (controller) controller.abort(); }, REQUEST_TIMEOUT_MS);
     var init = { method: opts.method || "GET", headers: { "Accept": "application/json" }, cache: "no-store" };
