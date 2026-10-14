@@ -1,0 +1,6 @@
+OnLabel Specs-Prompts.txt
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.env

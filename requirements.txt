@@ -1,0 +1,10 @@
+google-genai
+pymupdf
+numpy
+pandas
+streamlit
+fastapi
+uvicorn
+requests
+pydantic
+python-dotenv
