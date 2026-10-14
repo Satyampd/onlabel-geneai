@@ -367,6 +367,26 @@ with tab_chat:
                 # Reply text is shown exactly as served (no markdown re-rendering).
                 if kind.startswith("red_"):
                     st.error("🚨 **Safety Escalation:**")
+                    with st.expander("📋 Submit Adverse Event (AE) Intake Form (Demo)", expanded=False):
+                        with st.form(key=f"ae_form_{turn.get('latency_ms')}_{len(st.session_state.chat_history)}"):
+                            rep_name = st.text_input("Patient Name / Initials", value="")
+                            rep_role = st.selectbox("Reporter Role", ["Patient", "Caregiver / Family", "Healthcare Provider"])
+                            rep_sev = st.selectbox("Severity", ["Mild", "Moderate", "Severe", "Urgent / Emergency"], index=1)
+                            user_prev = st.session_state.chat_history[-2]["text"] if len(st.session_state.chat_history) >= 2 else ""
+                            rep_desc = st.text_area("Symptom Description", value=user_prev)
+                            if st.form_submit_button("Submit AE Report"):
+                                review.record_ae_form(
+                                    rid=turn.get("report_id"),
+                                    form_data={
+                                        "reporter_type": rep_role,
+                                        "patient_name": rep_name,
+                                        "severity": rep_sev,
+                                        "description": rep_desc,
+                                        "submitted_at": datetime.now().isoformat(timespec="seconds"),
+                                    },
+                                    session_id=st.session_state.session_id,
+                                )
+                                st.success("Adverse Event Report submitted to safety queue!")
                 elif kind == "advice":
                     st.warning("ℹ️ **Guidance Note:**")
                 st.code(reply, language=None, wrap_lines=True)
@@ -429,6 +449,18 @@ with tab_insights:
                 rc1, rc2, rc3 = st.columns([3, 1, 1])
                 rc1.write(f"**Query:** \"{rep.get('message')}\"")
                 rc1.caption(f"**Type:** `{rep.get('red_type')}` | **Terms:** `{rep.get('scan_terms')}` | **Time:** {rep.get('ts')}")
+                if rep.get("ae_form"):
+                    ae = rep["ae_form"]
+                    with rc1.expander("📋 Patient Adverse Event Intake Form (Submitted)", expanded=True):
+                        st.markdown(f"**Reporter:** {ae.get('patient_name', 'Anonymous')} ({ae.get('reporter_type', 'Patient')})")
+                        if ae.get("contact"):
+                            st.markdown(f"**Contact:** {ae.get('contact')}")
+                        st.markdown(f"**Onset:** {ae.get('onset_date', '—')} · **Severity:** `{ae.get('severity', '—')}` · **HCP Contacted:** {ae.get('doctor_contacted', '—')}")
+                        st.markdown(f"**Description:** {ae.get('description', '—')}")
+                        if ae.get("product_pen_issue"):
+                            st.markdown(f"**Pen/Lot:** {ae.get('product_pen_issue')}")
+                        if ae.get("submitted_at"):
+                            st.caption(f"Submitted: {ae.get('submitted_at')}")
                 rc2.write(f"**Status:** {status_badge}")
                 if rep.get("ack_by"):
                     rc2.caption(f"Ack by: {rep.get('ack_by')} at {rep.get('ack_ts')}")
