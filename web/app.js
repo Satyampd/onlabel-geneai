@@ -593,13 +593,6 @@
     img.src = imgUrl;
     a.appendChild(img);
     wrap.appendChild(a);
-
-    if (fig.caption) {
-      var cap = el("figcaption", "fig-card__cap");
-      cap.appendChild(iconEl("image", 14));
-      cap.appendChild(el("span", "fig-card__text", fig.caption));
-      wrap.appendChild(cap);
-    }
     return wrap;
   }
 
