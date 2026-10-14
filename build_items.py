@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import re
@@ -112,6 +113,91 @@ def normalise(s: str) -> str:
     return s
 
 
+MIN_PART_CHARS = 20
+PART_END_CHARS = (".", "!", "?", ":", ")")
+
+
+def coerce_parts(raw):
+    """answer_parts must be a list of strings; a bare string is wrapped. Anything else -> None."""
+    if isinstance(raw, str):
+        return [raw]
+    if isinstance(raw, list) and all(isinstance(p, str) for p in raw):
+        return list(raw)
+    return None
+
+
+FOOTNOTE_MARKS = "*†‡§¶#"
+_BULLET_START = re.compile(r"^\s*([•○▪*†‡§¶#]|o\s)")
+
+
+def ends_at_line_break(norm_part: str, source_raw: str | None) -> bool:
+    """True if the part ends exactly where a source line ends AND the next
+    non-empty line starts a new item or sentence (bullet, capital letter, digit).
+    This accepts list items without punctuation ("…progressive disease") but
+    rejects cuts inside a wrapped sentence ("…loss of" / "coordination in…")."""
+    if not source_raw:
+        return False
+    lines = source_raw.splitlines()
+    for i, line in enumerate(lines):
+        line_norm = normalise(line)
+        if not line_norm or line.rstrip().endswith("-"):
+            continue
+        if not (norm_part.endswith(line_norm) or line_norm.endswith(norm_part)):
+            continue
+        for nxt in lines[i + 1:]:
+            if not nxt.strip():
+                continue
+            nxt_norm = normalise(nxt)
+            if _BULLET_START.match(nxt) or not nxt_norm or nxt_norm[0].isupper() or nxt_norm[0].isdigit():
+                return True
+            break
+    return False
+
+
+def verify_parts(raw_parts, source_norm: str, source_raw: str | None = None):
+    """Return (found_in_source, parts, not_found_parts, notes).
+
+    A part is found only if it is a string, at least MIN_PART_CHARS long after
+    normalising, occurs in source_norm, and ends at a natural boundary (ends with
+    . ! ? : ), ends at a source line break before a new item/sentence, or the
+    match runs to end-of-text)."""
+    parts = coerce_parts(raw_parts)
+    if parts is None:
+        return False, [], [repr(raw_parts)[:200]], ["BAD_ANSWER_PARTS_TYPE"]
+    not_found, notes = [], []
+    for part in parts:
+        norm_part = normalise(part)
+        if len(norm_part) < MIN_PART_CHARS:
+            not_found.append(part)
+            notes.append("PART_TOO_SHORT")
+            continue
+        if norm_part not in source_norm:
+            not_found.append(part)
+            continue
+        if not norm_part.rstrip(FOOTNOTE_MARKS).endswith(PART_END_CHARS) and not ends_at_line_break(norm_part, source_raw):
+            # accept only if some occurrence runs to end-of-text
+            ends_at_eot = False
+            start = source_norm.find(norm_part)
+            while start != -1:
+                if start + len(norm_part) == len(source_norm):
+                    ends_at_eot = True
+                    break
+                start = source_norm.find(norm_part, start + 1)
+            if not ends_at_eot:
+                not_found.append(part)
+                notes.append("CUT_MID_SENTENCE")
+    found = len(parts) > 0 and len(not_found) == 0
+    return found, parts, not_found, notes
+
+
+def normalise_printed_pages(pp):
+    if pp is None or pp == "":
+        return pp
+    s = str(pp).strip()
+    s = re.sub(r"\s*[-‐‑‒–—―−]\s*", "–", s)
+    return s
+
+
 def format_answer_part(part: str) -> str:
     lines = [line.strip() for line in part.split("\n")]
     raw_lines = [l for l in lines if l]
@@ -123,18 +209,20 @@ def format_answer_part(part: str) -> str:
     i = 0
     while i < len(raw_lines):
         line = raw_lines[i]
-        if line == "•" and i + 1 < len(raw_lines):
-            merged_bullets.append(f"• {raw_lines[i+1]}")
+        if line in ("•", "○", "▪") and i + 1 < len(raw_lines):
+            merged_bullets.append(f"{line} {raw_lines[i+1]}")
             i += 2
         else:
             merged_bullets.append(line)
             i += 1
 
-    # 2. line starting with "o " becomes "   ◦ <text>"
+    # 2. line starting with "o ", "○" or "▪" (sub-bullets) becomes "   ◦ <text>"
     transformed = []
     for line in merged_bullets:
         if line.startswith("o "):
             transformed.append("   ◦ " + line[2:].lstrip())
+        elif line.startswith("○") or line.startswith("▪"):
+            transformed.append("   ◦ " + line[1:].lstrip())
         else:
             transformed.append(line)
 
@@ -193,18 +281,19 @@ Copy it 100% CHARACTER-FOR-CHARACTER from the source text with ZERO alterations.
 If a bullet list is extracted, include the introductory lead-in clause.
 
 Return ONLY valid JSON:
-{"repaired_parts": ["exact text snippet 1", "exact text snippet 2"]}
+{{"repaired_parts": ["exact text snippet 1", "exact text snippet 2"]}}
 """
 
 
 def retry_pointer(client, item: dict, source_raw: str, source_norm: str) -> bool:
-    prompt = PROMPT_REPOINTER.format(
-        question=item.get("question", ""),
-        attempted_answer="\n".join(item.get("answer_parts", [])),
-        source_text=source_raw[:6000],
-    )
     for attempt in range(2):
         try:
+            prev_parts = coerce_parts(item.get("answer_parts")) or []
+            prompt = PROMPT_REPOINTER.format(
+                question=item.get("question", ""),
+                attempted_answer="\n".join(prev_parts),
+                source_text=source_raw,
+            )
             resp = client.models.generate_content(
                 model=config.MODEL_PRO,
                 contents=prompt,
@@ -216,13 +305,9 @@ def retry_pointer(client, item: dict, source_raw: str, source_norm: str) -> bool
             data = parse_json_safely(resp.text)
             new_parts = data.get("repaired_parts", []) if isinstance(data, dict) else []
             if new_parts:
-                all_found = True
-                for p in new_parts:
-                    if normalise(p) not in source_norm:
-                        all_found = False
-                        break
+                all_found, parts, _, _ = verify_parts(new_parts, source_norm, source_raw)
                 if all_found:
-                    item["answer_parts"] = new_parts
+                    item["answer_parts"] = parts
                     item["repaired"] = True
                     return True
         except Exception as e:
@@ -267,7 +352,7 @@ def main():
         print(f"Brochure PDF page {p_num} (index {p_idx}): {len(text)} chars, rendered {len(png_bytes)} bytes PNG.")
 
     # --- Part B: Generate drafts with MODEL_PRO ---
-    print("\n--- Part B: Generating drafts with Gemini 2.5 Pro ---")
+    print(f"\n--- Part B: Generating drafts with {config.MODEL_PRO} ---")
     items = []
     seen_ids = set()
 
@@ -324,14 +409,10 @@ def main():
             suffix += 1
         seen_ids.add(item_id)
 
-        # Determine pdf_page for Medication Guide: page containing the first answer part
-        first_part = item.get("answer_parts", [""])[0] if item.get("answer_parts") else ""
-        norm_first = normalise(first_part)
-        found_p = 1
-        for idx, np_text in enumerate(norm_mg_pages):
-            if norm_first and norm_first in np_text:
-                found_p = idx + 1
-                break
+        # pdf_page for the Medication Guide is located in Part C from the final
+        # verified parts (after repair); keep the model's page, if any, until then.
+        model_page = item.get("pdf_page")
+        found_p = model_page if isinstance(model_page, int) and not isinstance(model_page, bool) else None
 
         item_entry = {
             "id": item_id,
@@ -412,6 +493,7 @@ def main():
                     printed_pages = "16–17"
                 elif p_num == 11:
                     printed_pages = "20–21"
+            printed_pages = normalise_printed_pages(printed_pages)
 
             item_entry = {
                 "id": item_id,
@@ -443,19 +525,11 @@ def main():
             p_num = item["citation"]["pdf_page"]
             source_norm = br_page_data[p_num]["norm_text"]
 
-        answer_parts = item.get("answer_parts", [])
-        not_found_parts = []
-        for part in answer_parts:
-            norm_part = normalise(part)
-            if norm_part not in source_norm:
-                not_found_parts.append(part)
-            else:
-                if found_parts_sample is None and len(norm_part.split()) >= 5:
-                    found_parts_sample = (part, source_norm)
-                if phone_part_sample is None and re.search(r"\d{3}[-\s]\d{3}[-\s]\d{4}", part):
-                    phone_part_sample = (part, source_norm)
-
-        found_in_source = (len(not_found_parts) == 0) and (len(answer_parts) > 0)
+        raw_src = mg_full_text if item["doc"] == "medication_guide" else br_page_data[item["citation"]["pdf_page"]]["text"]
+        found_in_source, answer_parts, not_found_parts, verify_notes = verify_parts(
+            item.get("answer_parts"), source_norm, raw_src
+        )
+        item["answer_parts"] = answer_parts
 
         # Automated repair with retry_pointer if not found
         if not found_in_source:
@@ -463,12 +537,49 @@ def main():
             if retry_pointer(client, item, raw_src, source_norm):
                 answer_parts = item["answer_parts"]
                 not_found_parts = []
+                verify_notes = []
                 found_in_source = True
+
+        if found_in_source:
+            for part in answer_parts:
+                norm_part = normalise(part)
+                if found_parts_sample is None and len(norm_part.split()) >= 5:
+                    found_parts_sample = (part, source_norm)
+                if phone_part_sample is None and re.search(r"\d{3}[-\s]\d{3}[-\s]\d{4}", part):
+                    phone_part_sample = (part, source_norm)
+
+        notes = list(dict.fromkeys(verify_notes))
+
+        # Medication Guide pdf_page: page containing the first final verified part
+        if item["doc"] == "medication_guide":
+            located_p = None
+            if found_in_source and answer_parts:
+                norm_first = normalise(answer_parts[0])
+                for idx, np_text in enumerate(norm_mg_pages):
+                    if norm_first in np_text:
+                        located_p = idx + 1
+                        break
+            if located_p is not None:
+                item["citation"]["pdf_page"] = located_p
+            elif item["citation"].get("pdf_page") is not None:
+                notes.append("PDF_PAGE_FROM_MODEL")
+            else:
+                item["citation"]["pdf_page"] = 1
+                notes.append("PDF_PAGE_UNKNOWN_DEFAULTED_TO_1")
+
+        # Section heading is shown to patients: it must come from the source text
+        section = item["citation"].get("section") or ""
+        norm_section = normalise(section) if isinstance(section, str) else ""
+        section_verified = bool(norm_section) and norm_section in source_norm
+        if not section_verified:
+            item["citation"]["section"] = ""
 
         item["checks"] = {
             "found_in_source": found_in_source,
             "not_found_parts": not_found_parts,
             "repaired": item.get("repaired", False),
+            "section_verified": section_verified,
+            "notes": notes,
         }
 
         # Build display text for found items
@@ -607,7 +718,7 @@ def main():
     print(f"Retrieval self-test: {passed_paraphrases}/{total_paraphrases} ({pass_rate:.1f}%) passed.")
 
     # --- Part E: Judge (MODEL_PRO) ---
-    print("\n--- Part E: Judging items with Gemini 2.5 Pro ---")
+    print(f"\n--- Part E: Judging items with {config.MODEL_PRO} ---")
     # Items not found in source get verdict "fail", reason "Not found in the source document." without a model call.
     found_items = [it for it in items if it["checks"]["found_in_source"]]
     not_found_items = [it for it in items if not it["checks"]["found_in_source"]]
@@ -690,15 +801,15 @@ def main():
                                 "id": it["id"],
                                 "verdict": "concern",
                                 "checks": {
-                                    "answers_question": True,
-                                    "self_contained": True,
-                                    "complete": True,
-                                    "placeholder": it["checks"]["placeholder"],
-                                    "advice_risk": False,
-                                    "paraphrases_ok": True,
-                                    "overlap": False,
+                                    "answers_question": None,
+                                    "self_contained": None,
+                                    "complete": None,
+                                    "placeholder": None,
+                                    "advice_risk": None,
+                                    "paraphrases_ok": None,
+                                    "overlap": None,
                                 },
-                                "reason": "Judge call failed; requires manual human review.",
+                                "reason": "AI review unavailable",
                                 "suggestion": "Inspect manually in Review screen.",
                             }
 
@@ -738,11 +849,29 @@ def main():
         except Exception as e:
             print(f"Warning: Could not load existing items.json: {e}")
 
+    def review_fingerprint(x: dict) -> str:
+        cite = x.get("citation") or {}
+        paras = x.get("paraphrases") or []
+        if not isinstance(paras, list):
+            paras = [paras]
+        payload = {
+            "question": x.get("question", ""),
+            "paraphrases": sorted(str(p) for p in paras),
+            "answer": x.get("answer", ""),
+            "doc": x.get("doc", ""),
+            "section": cite.get("section", ""),
+            "pdf_page": cite.get("pdf_page"),
+        }
+        return hashlib.sha256(
+            json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        ).hexdigest()
+
     for it in items:
         old_it = existing_items_map.get(it["id"])
         if old_it and old_it.get("status") in ["approved", "rejected"]:
-            # If item is no longer found in source, or answer text changed, set back to pending
-            if not it["checks"]["found_in_source"] or it["answer"] != old_it.get("answer"):
+            # Keep the human decision only if the item is still verified and the
+            # reviewed fields (question, paraphrases, answer, citation) are unchanged
+            if not it["checks"]["found_in_source"] or review_fingerprint(it) != review_fingerprint(old_it):
                 it["status"] = "pending"
                 it["review"] = {
                     "reviewer": "",

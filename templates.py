@@ -3,14 +3,12 @@
 TEMPLATE_ANSWER = (
     "Here's what the approved KESIMPTA information says:\n\n"
     "{answer}\n\n"
-    "{citation}\n\n"
     "For questions about your own situation, please talk to your healthcare provider."
 )
 
 TEMPLATE_RELATED = (
     "I couldn't find an exact answer to that, but this approved information may help:\n\n"
-    "{answer}\n\n"
-    "{citation}"
+    "{answer}"
 )
 
 TEMPLATE_ADVICE = (
@@ -71,9 +69,10 @@ BANNER = (
     "Reports entered here are not sent to Novartis."
 )
 
+# Starter questions point at brochure content (pen, support, side effects, storage).
 STARTERS = [
+    "How does the auto-injector pen work?",
+    "What support is available to me?",
+    "What are the most common side effects?",
     "How should I store my pen?",
-    "What if I miss a monthly dose?",
-    "What are the common side effects?",
-    "Can I get vaccines while on Kesimpta?",
 ]

@@ -16,4 +16,6 @@ package.json
 
 # Test scripts and frontend screenshots
 *.js
+!web/*.js
 *.png
+

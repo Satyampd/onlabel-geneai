@@ -2,6 +2,7 @@ import json
 import os
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import numpy as np
 from google import genai
@@ -39,42 +40,69 @@ For red, red_type is one of: "urgent", "side_effect", "pregnancy", "complaint". 
 Return ONLY valid JSON:
 {"zone":"green|yellow|red|off_topic","red_type":"urgent|side_effect|pregnancy|complaint|null","intent":"about|how_to_use|dosing_schedule|missed_dose|storage_travel|side_effects|serious_warnings|pregnancy_breastfeeding|vaccines|who_should_not_use|ingredients|support_cost|comparison|other","reason":"short reason"}"""
 
-# Safety word lists
-TIER1_TERMS = [
-    "can't breathe", "cant breathe", "trouble breathing", "hard to breathe",
-    "chest tightness", "chest pain", "lips are swelling", "face is swelling",
-    "tongue is swelling", "throat is swelling", "throat is closing",
-    "emergency", "911", "ambulance", "hospital", "fainted", "passed out",
-    "overdose", "injected twice", "double dose", "wrong dose",
-    "suicide", "self-harm", "kill myself"
+# Safety word lists. All terms match at word boundaries (so "itch" never matches
+# "switch"). A trailing "*" means "word starting with" (e.g. "vomit*" = vomit, vomiting).
+
+# Always urgent, even without a personal marker: these phrases describe a situation.
+URGENT_PHRASES = [
+    "can't breathe", "cant breathe", "cannot breathe", "trouble breathing", "hard to breathe",
+    "chest tightness", "chest feels tight", "chest pain", "lips are swelling", "face is swelling",
+    "tongue is swelling", "throat is swelling", "throat is closing", "call 911",
+    "fainted", "passed out", "overdose*", "injected twice", "double dose", "wrong dose",
+    "suicid*", "self-harm", "kill myself",
 ]
 
-PREGNANCY_TERMS = [
-    "i'm pregnant", "im pregnant", "i am pregnant", "got pregnant",
-    "became pregnant", "found out i'm pregnant", "i think i'm pregnant",
-    "my wife is pregnant", "my partner is pregnant", "pregnant now"
-]
+# Urgent only together with a personal marker ("Is it given in a hospital?" stays green).
+URGENT_CONTEXT_WORDS = ["emergency", "911", "ambulance", "hospital*", "er"]
 
+PREGNANCY_PHRASES = [
+    "i'm pregnant", "im pregnant", "i am pregnant", "got pregnant", "became pregnant",
+    "i think i'm pregnant", "i think im pregnant", "my wife is pregnant",
+    "my partner is pregnant",
+]
+NEGATIONS = ["not pregnant", "never pregnant"]
+
+# Personal-experience markers: someone describes what happened, not asks in general.
 EXPERIENCE_MARKERS = [
-    "i have ", "i've ", "ive ", "i had ", "i got ", "i'm having", "im having",
-    "i am having", "i feel", "i felt", "i noticed", "i'm getting", "im getting",
-    "i keep", "since my", "after my", "my skin", "my eyes", "my lips",
-    "my face", "my throat", "my tongue", "my arm", "my leg", "my head",
-    "my urine", "my pen", "my injection", "my son", "my daughter",
-    "my wife", "my husband", "my mother", "my father", "my child"
+    "i have", "i've had", "i've been", "i've got", "i've noticed", "i've developed",
+    "ive had", "ive been", "ive got", "i had", "i got", "i'm having", "im having",
+    "i am having", "i feel", "i felt", "i noticed", "i'm getting", "im getting", "i keep",
+    "since my", "after my", "my skin", "my eyes", "my lips", "my face", "my throat",
+    "my tongue", "my arm", "my leg", "my head", "my urine", "my pen", "my injection",
+    "my son", "my daughter", "my wife", "my husband", "my mother", "my father", "my child",
+    "my mom", "my mum", "my dad", "my baby",
 ]
 
 SYMPTOM_WORDS = [
-    "rash", "hives", "itch", "fever", "chills", "headache", "swelling",
-    "swollen", "yellow", "jaundice", "dark urine", "vomit", "nausea",
-    "weak", "vision", "blurry", "confus", "infection", "dizzy", "faint"
+    "rash*", "hives", "itch*", "fever*", "chills", "headache*", "swelling", "swollen",
+    "yellow*", "jaundice", "dark urine", "vomit*", "nausea*", "weak*", "vision", "blurry",
+    "confus*", "infection*", "dizz*", "faint*",
 ]
 
 COMPLAINT_WORDS = [
-    "didn't click", "didnt click", "won't click", "wont click",
-    "broken", "leak", "cloudy", "particles", "expired",
-    "damaged", "froze", "frozen", "cracked"
+    "didn't click", "didnt click", "won't click", "wont click", "broken", "leak*",
+    "cloudy", "particles", "expired", "damaged", "froze", "frozen", "cracked",
 ]
+
+
+def _pattern(term: str) -> re.Pattern:
+    stem = term[:-1] if term.endswith("*") else term
+    tail = r"\w*" if term.endswith("*") else r"\b"
+    return re.compile(r"(?<![\w'])" + re.escape(stem) + tail)
+
+
+_COMPILED: dict[str, list[tuple[str, re.Pattern]]] = {
+    name: [(t, _pattern(t)) for t in terms]
+    for name, terms in {
+        "urgent": URGENT_PHRASES, "urgent_ctx": URGENT_CONTEXT_WORDS,
+        "pregnancy": PREGNANCY_PHRASES, "exp": EXPERIENCE_MARKERS,
+        "symptom": SYMPTOM_WORDS, "complaint": COMPLAINT_WORDS,
+    }.items()
+}
+
+
+def _hits(name: str, text: str) -> list[str]:
+    return [t for t, p in _COMPILED[name] if p.search(text)]
 
 
 def safety_word_scan(message: str) -> tuple[str | None, list[str]]:
@@ -83,33 +111,29 @@ def safety_word_scan(message: str) -> tuple[str | None, list[str]]:
     Returns (red_type, matched_terms).
     Can only raise severity to red.
     """
-    padded = f" {message.lower()} "
-    scan_terms = []
+    text = message.lower().replace("’", "'")
 
-    # 1. TIER 1 Urgent
-    for term in TIER1_TERMS:
-        if term in padded:
-            scan_terms.append(term)
-    if scan_terms:
-        return "urgent", scan_terms
+    urgent = _hits("urgent", text)
+    if urgent:
+        return "urgent", urgent
 
-    # 2. Pregnancy
-    for term in PREGNANCY_TERMS:
-        if term in padded:
-            scan_terms.append(term)
-    if scan_terms:
-        return "pregnancy", scan_terms
+    exp = _hits("exp", text)
+    urgent_ctx = _hits("urgent_ctx", text)
+    if exp and urgent_ctx:
+        return "urgent", exp + urgent_ctx
 
-    # 3. Experience markers + Symptoms or Complaints
-    matched_exp = [m for m in EXPERIENCE_MARKERS if m in padded]
-    if matched_exp:
-        matched_symptoms = [s for s in SYMPTOM_WORDS if s in padded]
-        if matched_symptoms:
-            return "side_effect", matched_exp + matched_symptoms
+    if not any(n in text for n in NEGATIONS):
+        pregnancy = _hits("pregnancy", text)
+        if pregnancy:
+            return "pregnancy", pregnancy
 
-        matched_complaints = [c for c in COMPLAINT_WORDS if c in padded]
-        if matched_complaints:
-            return "complaint", matched_exp + matched_complaints
+    if exp:
+        symptoms = _hits("symptom", text)
+        if symptoms:
+            return "side_effect", exp + symptoms
+        complaints = _hits("complaint", text)
+        if complaints:
+            return "complaint", exp + complaints
 
     return None, []
 
@@ -151,16 +175,60 @@ def cosine_sim(v1, v2) -> float:
     return float(np.dot(a, b))
 
 
+_items_cache = {"mtime": None, "items": [], "matrix": None, "owners": []}
+
+
 def load_approved_items() -> list[dict]:
+    """Approved AND verified items. Re-reads items.json only when the file changes
+    (it is ~30 MB because of the embeddings, so parsing it every turn adds latency)."""
     if not os.path.exists(config.ITEMS_JSON):
         return []
     try:
-        with open(config.ITEMS_JSON, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            return [it for it in data.get("items", []) if it.get("status") == "approved"]
+        mtime = os.path.getmtime(config.ITEMS_JSON)
+        if _items_cache["mtime"] != mtime:
+            with open(config.ITEMS_JSON, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            items = [
+                it for it in data.get("items", [])
+                if it.get("status") == "approved"
+                and it.get("checks", {}).get("found_in_source") is True
+            ]
+            vecs, owners = [], []
+            for idx, it in enumerate(items):
+                for v in it.get("embeddings", []):
+                    vecs.append(v)
+                    owners.append(idx)
+            _items_cache.update(
+                mtime=mtime,
+                items=items,
+                matrix=np.array(vecs, dtype=np.float32) if vecs else None,
+                owners=owners,
+            )
+        return _items_cache["items"]
     except Exception as e:
         print(f"Error loading items.json: {e}")
         return []
+
+
+def best_match(msg_vec: list[float]) -> tuple[dict | None, float]:
+    """Best approved item for a normalised query vector: max cosine over all its vectors.
+    The brochure is the primary approved material: if a brochure answer scores within
+    BROCHURE_PREFERENCE_MARGIN of the best answer, the brochure answer is served."""
+    items = load_approved_items()
+    matrix = _items_cache["matrix"]
+    if not items or matrix is None:
+        return None, 0.0
+    sims = matrix @ np.array(msg_vec, dtype=np.float32)
+    owners = np.array(_items_cache["owners"])
+    i = int(np.argmax(sims))
+    best_item, best_score = items[owners[i]], float(sims[i])
+    if best_item.get("doc") != "brochure":
+        is_brochure = np.array([items[o].get("doc") == "brochure" for o in owners])
+        if is_brochure.any():
+            j = int(np.argmax(np.where(is_brochure, sims, -1.0)))
+            if float(sims[j]) >= best_score - config.BROCHURE_PREFERENCE_MARGIN:
+                return items[owners[j]], float(sims[j])
+    return best_item, best_score
 
 
 def clean_json_text(text: str) -> str:
@@ -169,6 +237,52 @@ def clean_json_text(text: str) -> str:
         text = re.sub(r"^```(?:json)?\s*", "", text)
         text = re.sub(r"\s*```$", "", text)
     return text.strip()
+
+
+VALID_ZONES = {"green", "yellow", "red", "off_topic"}
+VALID_RED_TYPES = {"urgent", "side_effect", "pregnancy", "complaint"}
+
+RED_REPLIES = {
+    "urgent": ("red_urgent", TEMPLATE_RED_URGENT),
+    "pregnancy": ("red_pregnancy", TEMPLATE_RED_PREGNANCY),
+    "complaint": ("red_complaint", TEMPLATE_RED_COMPLAINT),
+    "side_effect": ("red_side_effect", TEMPLATE_RED_SIDE_EFFECT),
+}
+
+_executor = ThreadPoolExecutor(max_workers=4)
+
+
+def triage(client, message: str) -> dict:
+    """One Gemini call that only classifies. Retries once on invalid output."""
+    last_error = None
+    for _ in range(2):
+        try:
+            resp = client.models.generate_content(
+                model=config.MODEL_FLASH,
+                contents=message,
+                config=types.GenerateContentConfig(
+                    temperature=0,
+                    system_instruction=PROMPT_TRIAGE,
+                    response_mime_type="application/json",
+                ),
+            )
+            out = json.loads(clean_json_text(resp.text))
+            if isinstance(out, dict):
+                return out
+            last_error = ValueError(f"Invalid triage output: {out}")
+        except Exception as e:
+            last_error = e
+    raise last_error
+
+
+def _citation(item: dict) -> str:
+    cite = item.get("citation", {})
+    if item.get("doc") == "brochure":
+        title, detail = "KESIMPTA brochure", cite.get("printed_pages") and f"pp. {cite['printed_pages']}"
+    else:
+        title, detail = cite.get("doc_title") or "Medication Guide", cite.get("section")
+    # The section is only kept when it was verified against the source (build_items.py).
+    return f"Source: {title} · {detail}" if detail else f"Source: {title}"
 
 
 def answer_turn(message: str, session_id: str, eval: bool = False) -> dict:
@@ -181,166 +295,98 @@ def answer_turn(message: str, session_id: str, eval: bool = False) -> dict:
         "answer": str | None,
         "citation": str | None,
         "source_page": {"doc": str, "pdf_page": int} | None,
-        "why": {
-            "zone": str,
-            "red_type": str | None,
-            "intent": str | None,
-            "matched_id": str | None,
-            "score": float | None,
-            "scan_terms": list[str],
-        },
+        "why": {"zone", "red_type", "intent", "matched_id", "score", "scan_terms"},
         "latency_ms": float,
     }
     """
     start_t = time.time()
-    client = get_genai_client()
+
+    # Step 1: Safety word scan (code). Runs first and never depends on a model.
+    scan_red_type, scan_terms = safety_word_scan(message)
+
+    zone, red_type, intent, model_reason = "error", None, "error", ""
+    kind, reply_text = "error", TEMPLATE_ERROR
+    answer = citation = source_page = matched_id = score = None
+    source_label = approval = None
+    verbatim_ok = True
 
     try:
-        # Step 1: Safety word scan (code)
-        scan_red_type, scan_terms = safety_word_scan(message)
+        client = get_genai_client()
 
-        # Step 2: Triage call with MODEL_FLASH
-        triage_resp = None
-        for attempt in range(2):
-            try:
-                resp = client.models.generate_content(
-                    model=config.MODEL_FLASH,
-                    contents=message,
-                    config=types.GenerateContentConfig(
-                        temperature=0,
-                        system_instruction=PROMPT_TRIAGE,
-                        response_mime_type="application/json",
-                    ),
-                )
-                cleaned = clean_json_text(resp.text)
-                triage_resp = json.loads(cleaned)
-                break
-            except Exception as e:
-                if attempt == 1:
-                    raise
+        # Step 2: triage and query embedding in parallel (embedding is cheap; it is
+        # only used for green, but running both at once halves the wait).
+        triage_future = _executor.submit(triage, client, message)
+        embed_future = _executor.submit(get_embedding, client, message)
 
-        if not triage_resp or not isinstance(triage_resp, dict):
-            raise ValueError(f"Invalid triage output: {triage_resp}")
+        try:
+            triage_resp = triage_future.result(timeout=30)
+        except Exception as e:
+            if scan_red_type is None:
+                raise
+            # Fail safe: the model failed, but the safety net fired -> still escalate.
+            triage_resp = {"zone": "red", "red_type": scan_red_type, "intent": "other",
+                           "reason": f"triage unavailable ({type(e).__name__}); safety word scan fired"}
 
-        zone = triage_resp.get("zone", "off_topic")
-        red_type = triage_resp.get("red_type")
+        zone = str(triage_resp.get("zone", "")).strip().lower()
+        red_type = str(triage_resp.get("red_type") or "").strip().lower() or None
         intent = triage_resp.get("intent", "other")
         model_reason = triage_resp.get("reason", "")
 
-        # If scan fired, force zone "red" and use scan's red_type if model gave none
+        # The safety scan can only raise severity: red beats everything.
         if scan_red_type is not None:
             zone = "red"
-            if not red_type or red_type == "null":
+            if red_type not in VALID_RED_TYPES:
                 red_type = scan_red_type
+        if zone not in VALID_ZONES:
+            raise ValueError(f"Unknown zone from triage: {zone!r}")
+        if zone != "red":
+            red_type = None
 
         # Step 3: Route
-        reply_text = ""
-        kind = ""
-        answer = None
-        citation = None
-        source_page = None
-        matched_id = None
-        score = None
-
         if zone == "red":
-            if red_type == "urgent":
-                reply_text = TEMPLATE_RED_URGENT
-                kind = "red_urgent"
-            elif red_type == "pregnancy":
-                reply_text = TEMPLATE_RED_PREGNANCY
-                kind = "red_pregnancy"
-            elif red_type == "complaint":
-                reply_text = TEMPLATE_RED_COMPLAINT
-                kind = "red_complaint"
-            else:
-                reply_text = TEMPLATE_RED_SIDE_EFFECT
-                kind = "red_side_effect"
-
+            kind, reply_text = RED_REPLIES.get(red_type, RED_REPLIES["side_effect"])
         elif zone == "yellow":
-            reply_text = TEMPLATE_ADVICE
-            kind = "advice"
-
+            kind, reply_text = "advice", TEMPLATE_ADVICE
         elif zone == "off_topic":
-            reply_text = TEMPLATE_OFF_TOPIC
-            kind = "off_topic"
-
-        elif zone == "green":
-            # Embed user message
-            msg_vec = get_embedding(client, message)
-            approved_items = load_approved_items()
-
-            best_item = None
-            best_score = -1.0
-
-            for item in approved_items:
-                item_vecs = item.get("embeddings", [])
-                for v in item_vecs:
-                    sim = cosine_sim(msg_vec, v)
-                    if sim > best_score:
-                        best_score = sim
-                        best_item = item
-
-            score = best_score if best_item else 0.0
-
-            if best_item and score >= config.ACCEPT_THRESHOLD:
-                kind = "answer"
+            kind, reply_text = "off_topic", TEMPLATE_OFF_TOPIC
+        else:  # green
+            best_item, best_score = best_match(embed_future.result(timeout=30))
+            score = best_score
+            if best_item and best_score >= config.RELATED_THRESHOLD:
                 answer = best_item["answer"]
                 matched_id = best_item["id"]
-                cite_info = best_item.get("citation", {})
-                if best_item.get("doc") == "brochure":
-                    citation = f"Source: KESIMPTA brochure · pp. {cite_info.get('printed_pages', '')}"
-                else:
-                    citation = f"Source: {cite_info.get('doc_title', 'Medication Guide')} · {cite_info.get('section', '')}"
-                reply_text = TEMPLATE_ANSWER.format(answer=answer, citation=citation)
+                citation = _citation(best_item)
+                template = TEMPLATE_ANSWER if best_score >= config.ACCEPT_THRESHOLD else TEMPLATE_RELATED
+                kind = "answer" if template is TEMPLATE_ANSWER else "related"
+                reply_text = template.format(answer=answer, citation=citation)
                 source_page = {
                     "doc": best_item.get("doc"),
-                    "pdf_page": cite_info.get("pdf_page", 1),
+                    "pdf_page": best_item.get("citation", {}).get("pdf_page", 1),
+                    "item_id": best_item["id"],
                 }
-
-            elif best_item and score >= config.RELATED_THRESHOLD:
-                kind = "related"
-                answer = best_item["answer"]
-                matched_id = best_item["id"]
-                cite_info = best_item.get("citation", {})
-                if best_item.get("doc") == "brochure":
-                    citation = f"Source: KESIMPTA brochure · pp. {cite_info.get('printed_pages', '')}"
-                else:
-                    citation = f"Source: {cite_info.get('doc_title', 'Medication Guide')} · {cite_info.get('section', '')}"
-                reply_text = TEMPLATE_RELATED.format(answer=answer, citation=citation)
-                source_page = {
-                    "doc": best_item.get("doc"),
-                    "pdf_page": cite_info.get("pdf_page", 1),
-                }
-
+                source_label = citation.removeprefix("Source: ")
+                review = best_item.get("review") or {}
+                if review.get("reviewer"):
+                    approval = {"reviewer": review["reviewer"], "ts": review.get("ts", "")}
+                # Step 4: the served text must contain the approved answer exactly,
+                # and that answer must be the verified one stored for the item.
+                verbatim_ok = (
+                    answer in reply_text
+                    and best_item.get("checks", {}).get("found_in_source") is True
+                )
+                if not verbatim_ok:
+                    raise AssertionError("Verbatim check failed: not serving this answer")
             else:
-                kind = "no_answer"
-                reply_text = TEMPLATE_NO_ANSWER
-
-        else:
-            kind = "off_topic"
-            reply_text = TEMPLATE_OFF_TOPIC
-
-        # Step 4: Assert inserted answer == approved item's "answer"
-        verbatim_ok = True
-        if answer is not None and best_item is not None:
-            assert answer == best_item["answer"], "Verbatim assertion failed: displayed answer != approved answer!"
-            verbatim_ok = True
+                kind, reply_text = "no_answer", TEMPLATE_NO_ANSWER
 
     except Exception as e:
         print(f"Exception in answer_turn: {e}")
-        kind = "error"
-        reply_text = TEMPLATE_ERROR
-        zone = "error"
-        red_type = None
-        intent = "error"
+        kind, reply_text = "error", TEMPLATE_ERROR
+        zone, red_type, intent = "error", None, "error"
         model_reason = str(e)
-        matched_id = None
-        score = None
-        answer = None
-        citation = None
-        source_page = None
-        scan_terms = []
-        verbatim_ok = True
+        answer = citation = source_page = matched_id = None
+        source_label = approval = None
+        verbatim_ok = True  # nothing from the item set was served
 
     latency_ms = (time.time() - start_t) * 1000
 
@@ -387,7 +433,8 @@ def answer_turn(message: str, session_id: str, eval: bool = False) -> dict:
         "answer": answer,
         "citation": citation,
         "source_page": source_page,
-        "figure": best_item.get("figure") if best_item else None,
+        "source_label": source_label,
+        "approval": approval,
         "why": why,
         "latency_ms": round(latency_ms, 2),
     }

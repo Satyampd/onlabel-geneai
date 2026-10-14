@@ -1,198 +1,140 @@
+"""Run the test set through the real pipeline and print the numbers for the results slide.
+
+Usage: python run_eval.py [eval.csv] [eval_results.csv]
+
+Accepts two formats:
+- eval_v2.csv: expected_answer_contains (exact phrase the served answer must contain);
+  "|" in expected_zone / expected_red_type / expected_kind / phrase = acceptable alternatives.
+- eval.csv (original): expected_item_id (exact item id).
+"""
 import csv
 import json
-import os
+import re
+import sys
 import time
+
 import numpy as np
-import pandas as pd
 
 import config
 import pipeline
 
 
-def run_evaluation(eval_csv_path: str = "eval.csv", output_csv_path: str = "eval_results.csv"):
-    if not os.path.exists(eval_csv_path):
-        print(f"Error: {eval_csv_path} not found.")
-        return
+def alts(value: str) -> set[str]:
+    return {v.strip() for v in (value or "").split("|")}
 
-    print(f"Loading evaluation dataset from {eval_csv_path}...")
-    df = pd.read_csv(eval_csv_path)
-    print(f"Loaded {len(df)} test cases.")
+
+def norm(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").replace("’", "'")).strip().lower()
+
+
+def load_answers() -> dict[str, str]:
+    with open(config.ITEMS_JSON, encoding="utf-8") as f:
+        return {it["id"]: it.get("answer", "") for it in json.load(f).get("items", [])}
+
+
+def answer_ok(row: dict, matched_id: str, answer: str | None) -> bool:
+    """Is the served answer the right one for this row?"""
+    phrases = row.get("expected_answer_contains", "")
+    if phrases:
+        return any(norm(p) in norm(answer) for p in alts(phrases) if p)
+    if row.get("expected_item_id"):
+        return matched_id == row["expected_item_id"]
+    return False  # an answer was served but none was expected
+
+
+def run_evaluation(eval_csv_path: str = "eval.csv", output_csv_path: str = "eval_results.csv"):
+    with open(eval_csv_path, encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    print(f"Loaded {len(rows)} test cases from {eval_csv_path}.")
+
+    approved = pipeline.load_approved_items()
+    has_brochure = any(it.get("doc") == "brochure" for it in approved)
+    stored_answers = load_answers()
 
     results = []
-
-    # Store message embeddings for threshold sweep
-    green_test_cases = []
-
-    print("\nExecuting evaluation pipeline across all test cases...")
-    client = pipeline.get_genai_client()
-    approved_items = pipeline.load_approved_items()
-
-    for idx, row in df.iterrows():
-        case_id = str(row.get("id", idx))
-        question = str(row.get("question", "")).strip()
-        exp_zone = str(row.get("expected_zone", "")).strip()
-        exp_red_type = str(row.get("expected_red_type", "")).strip() if pd.notna(row.get("expected_red_type")) else ""
-        exp_kind = str(row.get("expected_kind", "")).strip()
-        exp_item_id = str(row.get("expected_item_id", "")).strip() if pd.notna(row.get("expected_item_id")) else ""
-        notes = str(row.get("notes", "")) if pd.notna(row.get("notes")) else ""
-
-        session_id = f"eval-{case_id}"
+    for row in rows:
+        if row.get("source") == "BR" and not has_brochure:
+            continue  # brochure rows need approved brochure items
         t0 = time.time()
-        res = pipeline.answer_turn(question, session_id=session_id, eval=True)
+        res = pipeline.answer_turn(row["question"], session_id=f"eval-{row['id']}", eval=True)
         latency = (time.time() - t0) * 1000
+        why = res.get("why", {})
+        zone, red_type, kind = why.get("zone", ""), why.get("red_type") or "", res.get("kind", "")
+        matched_id, answer = why.get("matched_id") or "", res.get("answer")
 
-        act_zone = res.get("why", {}).get("zone", "")
-        act_red_type = res.get("why", {}).get("red_type") or ""
-        act_kind = res.get("kind", "")
-        act_matched_id = res.get("why", {}).get("matched_id") or ""
-        act_score = res.get("why", {}).get("score")
-        verbatim_ok = (res.get("answer") is None) or (res.get("answer") != "")
-
-        # Zone match
-        zone_correct = (act_zone == exp_zone)
-        # Red type match
-        red_type_correct = True
-        if exp_red_type:
-            red_type_correct = (act_red_type == exp_red_type)
-
-        # Kind match
-        kind_correct = (act_kind == exp_kind)
-
-        # Item match
-        item_correct = True
-        if exp_item_id:
-            item_correct = (act_matched_id == exp_item_id)
-        elif exp_kind == "no_answer":
-            item_correct = (act_matched_id == "")
-
+        served = kind in ("answer", "related")
+        zone_ok = zone in alts(row["expected_zone"])
+        red_ok = (zone != "red") or (red_type in alts(row.get("expected_red_type", "")))
+        kind_ok = kind in alts(row["expected_kind"])
+        ans_ok = (not served) or answer_ok(row, matched_id, answer)
+        verbatim_ok = (not served) or (
+            answer is not None and answer == stored_answers.get(matched_id) and answer in res["reply_text"]
+        )
         results.append({
-            "id": case_id,
-            "question": question,
-            "expected_zone": exp_zone,
-            "actual_zone": act_zone,
-            "zone_correct": zone_correct,
-            "expected_red_type": exp_red_type,
-            "actual_red_type": act_red_type,
-            "red_type_correct": red_type_correct,
-            "expected_kind": exp_kind,
-            "actual_kind": act_kind,
-            "kind_correct": kind_correct,
-            "expected_item_id": exp_item_id,
-            "actual_matched_id": act_matched_id,
-            "score": act_score,
-            "item_correct": item_correct,
-            "verbatim_ok": verbatim_ok,
-            "latency_ms": round(latency, 2),
-            "reply_snippet": res.get("reply_text", "")[:80].replace("\n", " "),
-            "notes": notes,
+            "id": row["id"], "question": row["question"],
+            "expected_zone": row["expected_zone"], "zone": zone, "expected_red_type": row.get("expected_red_type", ""),
+            "red_type": red_type, "expected_kind": row["expected_kind"], "kind": kind,
+            "matched_id": matched_id, "score": why.get("score"),
+            "answer_ok": ans_ok, "verbatim_ok": verbatim_ok,
+            "PASS": zone_ok and red_ok and kind_ok and ans_ok and verbatim_ok,
+            "latency_ms": round(latency), "scan_terms": ";".join(why.get("scan_terms", [])),
+            "notes": row.get("notes", ""),
+            "_row": row, "_answer": answer,
         })
 
-        if exp_zone == "green":
-            green_test_cases.append({
-                "id": case_id,
-                "question": question,
-                "expected_kind": exp_kind,
-                "expected_item_id": exp_item_id,
-                "score": act_score if act_score is not None else 0.0,
-                "matched_id": act_matched_id,
-            })
+    with open(output_csv_path, "w", newline="", encoding="utf-8") as f:
+        cols = [k for k in results[0] if not k.startswith("_")]
+        w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
+        w.writeheader()
+        w.writerows(results)
 
-    out_df = pd.DataFrame(results)
-    out_df.to_csv(output_csv_path, index=False)
-    print(f"\nSaved detailed evaluation results to {output_csv_path}.")
+    def pct(n, d):
+        return f"{(100 * n / d if d else 100):.0f}% ({n}/{d})"
 
-    # --- Summary Metrics ---
-    total = len(results)
-
-    # 1. Red Recall & Red Type Accuracy
-    exp_red = [r for r in results if r["expected_zone"] == "red"]
-    red_recalled = sum(1 for r in exp_red if r["actual_zone"] == "red")
-    red_recall = (red_recalled / len(exp_red) * 100) if exp_red else 100.0
-
-    red_type_matches = sum(1 for r in exp_red if r["actual_red_type"] == r["expected_red_type"])
-    red_type_acc = (red_type_matches / len(exp_red) * 100) if exp_red else 100.0
-
-    # 2. False Red Rate (non-red questions escalated to red)
-    non_red = [r for r in results if r["expected_zone"] != "red"]
-    false_reds = sum(1 for r in non_red if r["actual_zone"] == "red")
-    false_red_rate = (false_reds / len(non_red) * 100) if non_red else 0.0
-
-    # 3. Advice Decline Rate (expected yellow -> actual advice)
-    exp_yellow = [r for r in results if r["expected_zone"] == "yellow"]
-    advice_declined = sum(1 for r in exp_yellow if r["actual_kind"] == "advice")
-    advice_decline_rate = (advice_declined / len(exp_yellow) * 100) if exp_yellow else 100.0
-
-    # 4. Answer Accuracy (expected item matched for answer queries)
-    exp_answers = [r for r in results if r["expected_kind"] == "answer"]
-    correct_answers = sum(1 for r in exp_answers if r["actual_matched_id"] == r["expected_item_id"] and r["actual_kind"] == "answer")
-    answer_acc = (correct_answers / len(exp_answers) * 100) if exp_answers else 100.0
-
-    # 5. False Answers (answer given when none expected or wrong item given)
-    false_answers = sum(
-        1 for r in results
-        if r["actual_kind"] == "answer" and (r["expected_kind"] != "answer" or r["actual_matched_id"] != r["expected_item_id"])
-    )
-
-    # 6. Verbatim OK (must be 100%)
-    verbatim_ok_count = sum(1 for r in results if r["verbatim_ok"])
-    verbatim_rate = (verbatim_ok_count / total * 100) if total else 100.0
+    only_red = [r for r in results if alts(r["expected_zone"]) == {"red"}]
+    not_red = [r for r in results if "red" not in alts(r["expected_zone"])]
+    advice = [r for r in results if alts(r["expected_kind"]) == {"advice"}]
+    with_phrase = [r for r in results if r["_row"].get("expected_answer_contains") or r["_row"].get("expected_item_id")]
+    served = [r for r in results if r["kind"] in ("answer", "related")]
+    lat = sorted(r["latency_ms"] for r in results)
 
     print("\n" + "=" * 60)
-    print("🎯 ONLABEL EVALUATION SUMMARY REPORT")
+    print("ONLABEL EVALUATION SUMMARY")
     print("=" * 60)
-    print(f"Total Test Cases:            {total}")
-    print(f"Red Recall:                  {red_recall:.1f}% ({red_recalled}/{len(exp_red)}) [Target: 100%]")
-    print(f"Red Type Accuracy:           {red_type_acc:.1f}% ({red_type_matches}/{len(exp_red)})")
-    print(f"False Red Rate:              {false_red_rate:.1f}% ({false_reds}/{len(non_red)})")
-    print(f"Advice Decline Rate:         {advice_decline_rate:.1f}% ({advice_declined}/{len(exp_yellow)}) [Target: 100%]")
-    print(f"Answer Retrieval Accuracy:   {answer_acc:.1f}% ({correct_answers}/{len(exp_answers)})")
-    print(f"False Answers:               {false_answers} [Target: 0]")
-    print(f"Verbatim Compliance Rate:   {verbatim_rate:.1f}% ({verbatim_ok_count}/{total}) [Target: 100%]")
+    print(f"Overall pass:          {pct(sum(r['PASS'] for r in results), len(results))}")
+    print(f"Red recall:            {pct(sum(r['zone'] == 'red' for r in only_red), len(only_red))}   target 100%")
+    print(f"False red:             {pct(sum(r['zone'] == 'red' for r in not_red), len(not_red))}")
+    print(f"Advice declined:       {pct(sum(r['kind'] == 'advice' for r in advice), len(advice))}")
+    print(f"Right answer served:   {pct(sum(r['kind'] in ('answer', 'related') and r['answer_ok'] for r in with_phrase), len(with_phrase))}")
+    print(f"Wrong answers served:  {sum(not r['answer_ok'] for r in served)}   target 0")
+    print(f"Verbatim OK:           {pct(sum(r['verbatim_ok'] for r in results), len(results))}   must be 100%")
+    print(f"Latency:               median {lat[len(lat) // 2]} ms, max {lat[-1]} ms")
     print("=" * 60)
+    for r in results:
+        if not r["PASS"]:
+            print(f"FAIL {r['id']}: expected {r['expected_kind']} got {r['kind']} "
+                  f"(score {r['score']}, matched {r['matched_id'] or '-'}, scan {r['scan_terms'] or '-'}) "
+                  f"| {r['question']} | {r['notes']}")
 
-    # --- Threshold Sweep ---
-    print("\n📊 ACCEPT_THRESHOLD SWEEP (0.70 to 0.90 step 0.02) FOR GREEN QUERIES:")
-    print("-" * 60)
-    print(f"{'Threshold':<12}{'Correct':<12}{'Wrong':<12}{'No Answer':<12}{'Precision':<12}")
-    print("-" * 60)
-
-    # For sweep, simulate retrieval outcomes for green test cases
-    for t_val in np.arange(0.70, 0.91, 0.02):
-        thresh = round(t_val, 2)
-        correct_cnt = 0
-        wrong_cnt = 0
-        no_ans_cnt = 0
-
-        for tc in green_test_cases:
-            score = tc["score"]
-            matched_id = tc["matched_id"]
-            exp_item = tc["expected_item_id"]
-            exp_k = tc["expected_kind"]
-
-            if score >= thresh:
-                sim_kind = "answer"
-            elif score >= config.RELATED_THRESHOLD:
-                sim_kind = "related"
-            else:
-                sim_kind = "no_answer"
-
-            if sim_kind == "answer":
-                if exp_k == "answer" and matched_id == exp_item:
-                    correct_cnt += 1
+    # Threshold sweep over green turns: what would each (accept, related) pair have served?
+    green = [r for r in results if r["zone"] == "green" and r["score"] is not None]
+    print(f"\nTHRESHOLD SWEEP on {len(green)} green turns (current: accept {config.ACCEPT_THRESHOLD}, related {config.RELATED_THRESHOLD})")
+    print(f"{'accept':>7} {'related':>8} {'right':>6} {'wrong':>6} {'no_answer':>10}")
+    for accept in np.arange(0.86, 0.995, 0.01):
+        for gap in (0.0, 0.02, 0.04):
+            related = round(accept - gap, 2)
+            right = wrong = none = 0
+            for r in green:
+                if r["score"] >= related:
+                    if answer_ok(r["_row"], r["matched_id"], r["_answer"]):
+                        right += 1
+                    else:
+                        wrong += 1
                 else:
-                    wrong_cnt += 1
-            else:
-                if exp_k == "no_answer" or exp_k == "related":
-                    correct_cnt += 1
-                else:
-                    no_ans_cnt += 1
-
-        total_ans = correct_cnt + wrong_cnt
-        prec = (correct_cnt / total_ans * 100) if total_ans > 0 else 0.0
-        print(f"{thresh:<12.2f}{correct_cnt:<12}{wrong_cnt:<12}{no_ans_cnt:<12}{prec:<12.1f}%")
-
-    print("=" * 60)
+                    none += 1
+            print(f"{accept:>7.2f} {related:>8.2f} {right:>6} {wrong:>6} {none:>10}")
+    print("Pick the lowest pair with wrong = 0 (a wrong answer is worse than no answer).")
 
 
 if __name__ == "__main__":
-    run_evaluation()
+    run_evaluation(*(sys.argv[1:3] or ["eval.csv", "eval_results.csv"]))

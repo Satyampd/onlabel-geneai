@@ -2,9 +2,9 @@ google-genai
 pymupdf
 numpy
 pandas
-streamlit
+streamlit>=1.39  # st.code(wrap_lines=True) in the Review tab
 fastapi
 uvicorn
 requests
-pydantic
+pydantic>=2  # field_validator in api.py
 python-dotenv

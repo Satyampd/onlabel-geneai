@@ -1,14 +1,16 @@
 import json
 import os
+import re
+import tempfile
 from datetime import datetime
 import streamlit as st
-import pymupdf
-from google import genai
 from google.genai import types
 
 import config
 import templates
 import pipeline
+import review
+import source_view
 
 st.set_page_config(
     page_title="OnLabel · KESIMPTA Patient Information",
@@ -26,36 +28,59 @@ header[data-testid="stHeader"] { display: none; }
 </style>
 """, unsafe_allow_html=True)
 
-# Helper to load items
-@st.cache_data
+PLACEHOLDER_RE = re.compile(r"\[[^\]]+\]")
+
+
+def _atomic_write(path: str, write_fn):
+    """Write to a temp file in the same directory, then os.replace it over `path`,
+    so a crash or concurrent reader never sees a half-written file."""
+    d = os.path.dirname(path) or "."
+    os.makedirs(d, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=d, prefix=".tmp_", suffix=os.path.basename(path))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            write_fn(f)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
+# Items cache keyed on the file's mtime. st.cache_resource returns the same object
+# (no copy of the ~32 MB dict on every rerun); a plain global in the Streamlit main
+# script would be reset on each rerun, so the resource cache is the module-level store.
+@st.cache_resource(max_entries=1, show_spinner=False)
+def _load_items_at(mtime: float):
+    with open(config.ITEMS_JSON, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
 def load_all_items_data():
     if not os.path.exists(config.ITEMS_JSON):
         return {"items": [], "built_at": "", "build_seconds": 0}
     try:
-        with open(config.ITEMS_JSON, "r", encoding="utf-8") as f:
-            return json.load(f)
+        return _load_items_at(os.path.getmtime(config.ITEMS_JSON))
     except Exception as e:
         st.error(f"Error loading items.json: {e}")
         return {"items": [], "built_at": "", "build_seconds": 0}
 
 
 def save_all_items_data(data):
-    with open(config.ITEMS_JSON, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
-    load_all_items_data.clear()
+    try:
+        _atomic_write(config.ITEMS_JSON, lambda f: json.dump(data, f))
+    finally:
+        # Invalidate either way: on failure the in-memory edit is dropped and disk wins.
+        _load_items_at.clear()
 
 
 @st.cache_data
-def render_pdf_page(doc_name: str, pdf_page: int) -> bytes:
-    pdf_path = config.MEDICATION_GUIDE_PDF if doc_name == "medication_guide" else config.BROCHURE_PDF
-    if not os.path.exists(pdf_path):
-        return b""
+def render_pdf_page(doc_name: str, pdf_page: int, parts: tuple = (), snippet: bool = False) -> bytes:
+    """Source page (or a crop around the passage) with the answer highlighted by code."""
     try:
-        doc = pymupdf.open(pdf_path)
-        p_idx = max(0, min(pdf_page - 1, len(doc) - 1))
-        page = doc[p_idx]
-        pix = page.get_pixmap(dpi=150)
-        return pix.tobytes("png")
+        return source_view.render(doc_name, pdf_page, list(parts) or None, snippet=snippet)
     except Exception as e:
         print(f"Error rendering PDF page {pdf_page} of {doc_name}: {e}")
         return b""
@@ -76,19 +101,21 @@ def load_logs():
 
 
 def save_logs(logs):
-    with open(config.LOG_JSONL, "w", encoding="utf-8") as f:
+    def _write(f):
         for entry in logs:
             f.write(json.dumps(entry) + "\n")
+    _atomic_write(config.LOG_JSONL, _write)
 
 
 # Sidebar
 with st.sidebar:
     st.title("🛡️ OnLabel Control")
-    reviewer_name = st.text_input("Your Name / Session", value="Human Reviewer", key="reviewer_name")
+    reviewer_name = st.text_input("Your Name / Session", value="", key="reviewer_name").strip()
     show_why = st.toggle("Show decision details ('why' line)", value=True, key="show_why")
 
     if st.button("🔄 Refresh Data"):
         st.cache_data.clear()
+        _load_items_at.clear()
         st.rerun()
 
     st.markdown("---")
@@ -98,6 +125,11 @@ with st.sidebar:
             safety_text = f.read()
         with st.expander("View Safety Panel", expanded=False):
             st.markdown(f"```text\n{safety_text}\n```")
+
+# One-shot confirmation from the previous run (set right before st.rerun()).
+_flash = st.session_state.pop("flash", None)
+if _flash:
+    st.toast(_flash)
 
 # Main Page Tabs
 tab_review, tab_chat, tab_insights = st.tabs(["📝 Review Screen", "💬 Live Chat", "📊 Insights & Reports"])
@@ -124,10 +156,13 @@ with tab_review:
     if not all_items:
         st.info("No items loaded. Please run `build_items.py` first to generate items.")
     else:
-        # Sort pending first
+        # Pending first, then brochure (the primary approved material) before the Medication Guide
         sorted_items = sorted(
             all_items,
-            key=lambda x: (0 if x.get("status") == "pending" else (1 if x.get("status") == "approved" else 2))
+            key=lambda x: (
+                0 if x.get("status") == "pending" else (1 if x.get("status") == "approved" else 2),
+                0 if x.get("doc") == "brochure" else 1,
+            ),
         )
 
         # Select item
@@ -136,14 +171,34 @@ with tab_review:
             status_icon = "⏳" if it.get("status") == "pending" else ("✅" if it.get("status") == "approved" else "❌")
             return f"[{status_icon} {it.get('status', '').upper()}] [{v}] {it.get('id')}: {it.get('question')[:60]}"
 
-        item_labels = [make_label(it) for it in sorted_items]
-        selected_idx = st.selectbox("Select Item to Inspect & Review", range(len(sorted_items)), format_func=lambda i: item_labels[i])
-        selected_item = sorted_items[selected_idx]
+        # Select by item id (not list position), so after a decision re-sorts the list
+        # the same item stays selected and shows its new status.
+        item_ids = [it.get("id") for it in sorted_items]
+        items_by_id = {it.get("id"): it for it in sorted_items}
+        item_labels = {it.get("id"): make_label(it) for it in sorted_items}
+        prev_id = st.session_state.get("review_selected_id")
+        sel_index = item_ids.index(prev_id) if prev_id in item_ids else 0
+        selected_id = st.selectbox(
+            "Select Item to Inspect & Review", item_ids, index=sel_index,
+            format_func=lambda i: item_labels.get(i, str(i)),
+        )
+        st.session_state["review_selected_id"] = selected_id
+        selected_item = items_by_id[selected_id]
 
         col_left, col_right = st.columns([3, 2])
 
         with col_left:
             st.subheader(f"Item: `{selected_item.get('id')}`")
+            rv = selected_item.get("review") or {}
+            if selected_item.get("status") in ("approved", "rejected") and rv:
+                status_line = f"**Status:** {selected_item.get('status', '').upper()} · **Reviewer:** {rv.get('reviewer') or '—'}"
+                if rv.get("reason_code"):
+                    status_line += f" · **Reason code:** `{rv.get('reason_code')}`"
+                if rv.get("ts"):
+                    status_line += f" · {rv.get('ts')}"
+                (st.success if selected_item.get("status") == "approved" else st.error)(status_line)
+            else:
+                st.markdown(f"**Status:** {selected_item.get('status', '').upper()}")
             st.markdown(f"**Document:** `{selected_item.get('doc')}` | **Topic:** `{selected_item.get('topic')}`")
             st.markdown(f"### ❓ Patient Question:\n**{selected_item.get('question')}**")
 
@@ -152,15 +207,22 @@ with tab_review:
                     st.markdown(f"- *{p}*")
 
             st.markdown("### 💬 Verified Answer (Character-for-Character):")
-            st.info(selected_item.get("answer", ""))
+            chk = selected_item.get("checks", {})
+            jdg = selected_item.get("judge", {})
+            answer_text = selected_item.get("answer", "")
+            # Shown as plain text so line breaks, bullets and asterisks are not re-rendered.
+            st.code(answer_text, language=None, wrap_lines=True)
+            if chk.get("placeholder"):
+                st.markdown(":red-background[:red[**Placeholder found**]]")
+                found_ph = PLACEHOLDER_RE.findall(answer_text)
+                if found_ph:
+                    st.text("\n".join(found_ph))
 
             cite = selected_item.get("citation", {})
             st.markdown(f"**Citation:** `{cite.get('doc_title')}` · Section: *{cite.get('section')}* · PDF Page: {cite.get('pdf_page')} (Printed: {cite.get('printed_pages')})")
 
             # Large Evidence Panel
             st.markdown("### 🔍 Evidence & Quality Gate Panel")
-            chk = selected_item.get("checks", {})
-            jdg = selected_item.get("judge", {})
 
             col_ev1, col_ev2 = st.columns(2)
             with col_ev1:
@@ -199,52 +261,68 @@ with tab_review:
             # Actions: Approve / Reject
             st.markdown("---")
             st.subheader("Human Decision")
-            can_approve = chk.get("found_in_source", False)
+            item_id = selected_item.get("id")
+            block_reason = review.block_reason(selected_item, reviewer_name)
+            can_approve = not block_reason
+            reject_code_key = f"reject_code_{item_id}"
+            reject_note_key = f"reject_note_{item_id}"
+
+            def _record_decision(decision: str, reason_code: str, note: str) -> bool:
+                selected_item["status"] = decision
+                selected_item["review"] = {
+                    "reviewer": reviewer_name,
+                    "decision": decision,
+                    "reason_code": reason_code,
+                    "note": note,
+                    "ts": datetime.now().isoformat(),
+                }
+                try:
+                    with st.spinner("Saving…"):
+                        save_all_items_data(items_data)
+                except Exception as e:
+                    st.error(f"Could not save the decision ({type(e).__name__}). Nothing was changed.")
+                    return False
+                st.session_state["review_selected_id"] = item_id
+                st.session_state.pop(reject_code_key, None)
+                st.session_state.pop(reject_note_key, None)
+                return True
 
             col_act1, col_act2 = st.columns(2)
             with col_act1:
                 if st.button("✅ APPROVE ITEM", type="primary", disabled=(not can_approve), use_container_width=True):
-                    selected_item["status"] = "approved"
-                    selected_item["review"] = {
-                        "reviewer": reviewer_name,
-                        "decision": "approved",
-                        "reason_code": "",
-                        "note": "",
-                        "ts": datetime.now().isoformat(),
-                    }
-                    save_all_items_data(items_data)
-                    st.success("Item approved!")
-                    st.rerun()
+                    if _record_decision("approved", "", ""):
+                        st.session_state["flash"] = f"✅ {item_id} approved by {reviewer_name}"
+                        st.rerun()
                 if not can_approve:
-                    st.caption("⚠️ Cannot approve: Item is not 100% verified in source text.")
+                    st.caption(f"⚠️ Cannot approve: {block_reason}.")
 
             with col_act2:
                 reject_code = st.selectbox(
                     "Reject Reason Code",
-                    ["NOT_IN_SOURCE", "INCOMPLETE", "IS_ADVICE", "PLACEHOLDER_TEXT", "DUPLICATE", "OFF_SCOPE", "OTHER"],
-                    key="reject_code"
+                    review.REJECT_CODES,
+                    key=reject_code_key,
                 )
-                reject_note = st.text_input("Reviewer Note (optional)", key="reject_note")
-                if st.button("❌ REJECT ITEM", use_container_width=True):
-                    selected_item["status"] = "rejected"
-                    selected_item["review"] = {
-                        "reviewer": reviewer_name,
-                        "decision": "rejected",
-                        "reason_code": reject_code,
-                        "note": reject_note,
-                        "ts": datetime.now().isoformat(),
-                    }
-                    save_all_items_data(items_data)
-                    st.warning("Item rejected.")
-                    st.rerun()
+                reject_note = st.text_input("Reviewer Note (optional)", key=reject_note_key)
+                if st.button("❌ REJECT ITEM", disabled=(not reviewer_name), use_container_width=True):
+                    if _record_decision("rejected", reject_code, reject_note):
+                        st.session_state["flash"] = f"❌ {item_id} rejected by {reviewer_name} ({reject_code})"
+                        st.rerun()
+                if not reviewer_name:
+                    st.caption("⚠️ Cannot reject: Enter your name in the sidebar.")
 
         with col_right:
-            st.markdown("### 📄 Cited Document Page")
+            st.markdown("### 📄 Where this answer is in the source")
             p_num = cite.get("pdf_page", 1)
             d_name = selected_item.get("doc", "medication_guide")
-            img_bytes = render_pdf_page(d_name, p_num)
+            parts = tuple(selected_item.get("answer_parts") or ())
+            found = selected_item.get("checks", {}).get("found_in_source") is True
+            snip = render_pdf_page(d_name, p_num, parts, snippet=True) if found and parts else b""
+            if snip:
+                st.image(snip, caption="Passage highlighted by code on the approved page", use_container_width=True)
+            img_bytes = render_pdf_page(d_name, p_num, parts if found else ())
             if img_bytes:
-                st.image(img_bytes, caption=f"{cite.get('doc_title')} · Page {p_num}", use_container_width=True)
+                with st.expander(f"Full page · {cite.get('doc_title') or d_name} · PDF page {p_num}", expanded=not snip):
+                    st.image(img_bytes, use_container_width=True)
             else:
                 st.info("PDF page render unavailable.")
 
@@ -286,12 +364,18 @@ with tab_chat:
                 kind = turn.get("kind", "")
                 reply = turn.get("reply_text", "")
 
+                # Reply text is shown exactly as served (no markdown re-rendering).
                 if kind.startswith("red_"):
-                    st.error(f"🚨 **Safety Escalation:**\n\n{reply}")
+                    st.error("🚨 **Safety Escalation:**")
                 elif kind == "advice":
-                    st.warning(f"ℹ️ **Guidance Note:**\n\n{reply}")
-                else:
-                    st.markdown(reply)
+                    st.warning("ℹ️ **Guidance Note:**")
+                st.code(reply, language=None, wrap_lines=True)
+                if turn.get("citation"):
+                    st.caption(turn["citation"])
+                found_ph = PLACEHOLDER_RE.findall(turn.get("answer") or "")
+                if found_ph:
+                    st.markdown(":red-background[:red[**Placeholder found**]]")
+                    st.text("\n".join(found_ph))
 
                 # Show why line as cleaner expander
                 if show_why:
@@ -306,11 +390,6 @@ with tab_chat:
                         """)
                         if why.get("scan_terms"):
                             st.markdown(f"- **Safety Words Detected:** `{why.get('scan_terms')}`")
-
-                # Figure display
-                fig_info = turn.get("figure")
-                if fig_info and fig_info.get("image_path") and os.path.exists(fig_info["image_path"]):
-                    st.image(fig_info["image_path"], caption=fig_info.get("caption", "Figure Diagram"), width=500)
 
                 # Source page expander
                 src = turn.get("source_page")
@@ -343,7 +422,7 @@ with tab_insights:
         st.info("No safety reports logged yet. (Ask an urgent question, symptom, or pen complaint in Chat to trigger).")
     else:
         st.write(f"Total escalated reports: **{len(red_reports)}**")
-        for idx, rep in enumerate(reversed(red_reports)):
+        for rep in reversed(red_reports):
             status = rep.get("report_status")
             status_badge = "🔴 OPEN" if status == "open" else "🟢 ACKNOWLEDGED"
             with st.container(border=True):
@@ -355,13 +434,28 @@ with tab_insights:
                     rc2.caption(f"Ack by: {rep.get('ack_by')} at {rep.get('ack_ts')}")
 
                 if status == "open":
-                    if rc3.button("Acknowledge", key=f"ack_{idx}"):
-                        rep["report_status"] = "acknowledged"
-                        rep["ack_by"] = reviewer_name
-                        rep["ack_ts"] = datetime.now().isoformat()
-                        save_logs(logs)
-                        st.success("Report acknowledged!")
-                        st.rerun()
+                    ack_clicked = rc3.button(
+                        "Acknowledge", key=f"ack_{rep.get('ts')}_{rep.get('session_id')}",
+                        disabled=(not reviewer_name),
+                    )
+                    if not reviewer_name:
+                        rc3.caption("Enter your name in the sidebar")
+                    if ack_clicked:
+                        # Re-read right before rewriting so lines appended since this page
+                        # loaded (new chat turns) are not dropped.
+                        fresh_logs = load_logs()
+                        for entry in fresh_logs:
+                            if entry.get("ts") == rep.get("ts") and entry.get("session_id") == rep.get("session_id"):
+                                entry["report_status"] = "acknowledged"
+                                entry["ack_by"] = reviewer_name
+                                entry["ack_ts"] = datetime.now().isoformat()
+                        try:
+                            save_logs(fresh_logs)
+                        except Exception as e:
+                            st.error(f"Could not save the acknowledgement ({type(e).__name__}).")
+                        else:
+                            st.session_state["flash"] = "Report acknowledged!"
+                            st.rerun()
 
     st.markdown("---")
 
@@ -369,7 +463,10 @@ with tab_insights:
     st.subheader("💡 Content Gaps Analysis")
     st.caption("Internal analytics — AI-generated, for content planning only. Never shown to patients.")
 
-    unanswered_msgs = [l.get("message") for l in logs if l.get("route") in ["no_answer", "related"]]
+    unanswered_msgs = [
+        l.get("message") for l in logs
+        if l.get("route") in ["no_answer", "related"] and not l.get("eval")
+    ]
     st.write(f"Logged unanswered or related queries: **{len(unanswered_msgs)}**")
 
     if st.button("🔍 Find Content Gaps", type="primary"):
@@ -391,24 +488,37 @@ Return ONLY valid JSON: {"themes":[{"label":"short theme name","count":0,"exampl
 Questions:
 {MESSAGES}"""
 
-        with st.spinner("Analyzing queries with Gemini 2.5 Flash..."):
-            client = pipeline.get_genai_client()
-            resp = client.models.generate_content(
-                model=config.MODEL_FLASH,
-                contents=PROMPT_GAPS.replace("{MESSAGES}", "\n".join(f"- {m}" for m in msgs_to_cluster)),
-                config=types.GenerateContentConfig(
-                    temperature=0,
-                    response_mime_type="application/json",
-                ),
-            )
-            gaps_data = pipeline.clean_json_text(resp.text)
-            parsed_gaps = json.loads(gaps_data)
-            themes = parsed_gaps.get("themes", [])
+        with st.spinner("Gemini is grouping unanswered questions…"):
+            try:
+                client = pipeline.get_genai_client()
+                resp = client.models.generate_content(
+                    model=config.MODEL_FLASH,
+                    contents=PROMPT_GAPS.replace("{MESSAGES}", "\n".join(f"- {m}" for m in msgs_to_cluster)),
+                    config=types.GenerateContentConfig(
+                        temperature=0,
+                        response_mime_type="application/json",
+                    ),
+                )
+                parsed_gaps = json.loads(pipeline.clean_json_text(resp.text))
+                themes = parsed_gaps.get("themes", [])
+                if not isinstance(themes, list):
+                    raise ValueError("themes is not a list")
+                st.session_state["gap_themes"] = themes
+                st.session_state.pop("gap_error", None)
+            except Exception as e:
+                st.session_state["gap_error"] = f"Could not group the questions right now ({type(e).__name__}). Please try again."
 
-            st.write(f"Found **{len(themes)}** content gap themes:")
-            for th in themes:
-                with st.expander(f"📌 {th.get('label')} (Count: {th.get('count', len(th.get('example_messages', [])))})", expanded=True):
-                    st.write("**Examples:**")
-                    for eg in th.get("example_messages", []):
-                        st.markdown(f"- *{eg}*")
-                    st.info(f"**Suggested Content Plan:** {th.get('suggested_content')}")
+    if st.session_state.get("gap_error"):
+        st.error(st.session_state["gap_error"])
+
+    themes = st.session_state.get("gap_themes")
+    if themes is not None:
+        st.write(f"Found **{len(themes)}** content gap themes:")
+        for th in themes:
+            if not isinstance(th, dict):
+                continue
+            with st.expander(f"📌 {th.get('label')} (Count: {th.get('count', len(th.get('example_messages', [])))})", expanded=True):
+                st.write("**Examples:**")
+                for eg in th.get("example_messages", []):
+                    st.markdown(f"- *{eg}*")
+                st.info(f"**Suggested Content Plan:** {th.get('suggested_content')}")
