@@ -66,6 +66,7 @@ def chat(req: ChatRequest):
         "answer": turn_result["answer"],
         "citation": turn_result["citation"],
         "source_page_url": source_page_url,
+        "figure": turn_result.get("figure"),
         "why": turn_result["why"],
         "latency_ms": turn_result["latency_ms"],
     }
@@ -90,6 +91,11 @@ def get_page(doc: str, pdf_page: int):
     png_bytes = get_rendered_page(doc, pdf_page)
     return Response(content=png_bytes, media_type="image/png")
 
+
+# Serve figures
+figures_dir = os.path.join(os.path.dirname(__file__), "data", "figures")
+if os.path.exists(figures_dir):
+    app.mount("/api/figures", StaticFiles(directory=figures_dir), name="figures")
 
 # Serve frontend
 web_dir = os.path.join(os.path.dirname(__file__), "web")

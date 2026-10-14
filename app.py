@@ -307,6 +307,11 @@ with tab_chat:
                         if why.get("scan_terms"):
                             st.markdown(f"- **Safety Words Detected:** `{why.get('scan_terms')}`")
 
+                # Figure display
+                fig_info = turn.get("figure")
+                if fig_info and fig_info.get("image_path") and os.path.exists(fig_info["image_path"]):
+                    st.image(fig_info["image_path"], caption=fig_info.get("caption", "Figure Diagram"), width=500)
+
                 # Source page expander
                 src = turn.get("source_page")
                 if src:

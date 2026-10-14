@@ -2,11 +2,11 @@
   "figures": [
     {
       "id": "fig-pen-features-diagram",
-      "caption": "Diagram of the Kesimpta auto-injector pen highlighting three key features: hidden needle, sound guidance, and visual progress window.",
+      "caption": "Diagram of the KESIMPTA auto-injector pen held in a hand with numbered callouts explaining key features: hidden needle, sound guidance, and visual progress indicator.",
       "bbox": [
-        35,
         31,
-        569,
+        29,
+        571,
         476
       ],
       "doc": "brochure",
@@ -14,11 +14,24 @@
       "image_path": "data/figures/fig-pen-features-diagram.png"
     },
     {
-      "id": "fig-things-to-consider-chart",
-      "caption": "Comparison chart titled 'Things to Consider' contrasting KESIMPTA with other B-cell treatments regarding self-administration, location, steroid pretreatment, and post-dose observation.",
+      "id": "fig-lifestyle-benefits",
+      "caption": "Three-column summary of how KESIMPTA fits into daily life: home delivery, flexible administration without pretreatment, and room-temperature travel stability.",
       "bbox": [
-        164,
-        26,
+        244,
+        515,
+        545,
+        982
+      ],
+      "doc": "brochure",
+      "page": 4,
+      "image_path": "data/figures/fig-lifestyle-benefits.png"
+    },
+    {
+      "id": "fig-things-to-consider-chart",
+      "caption": "Comparison chart of treatment considerations between KESIMPTA and other B-cell treatments, including self-administration, location, steroid pretreatment, and post-dose observation.",
+      "bbox": [
+        163,
+        27,
         417,
         469
       ],
@@ -28,12 +41,12 @@
     },
     {
       "id": "fig-administration-times-methods-chart",
-      "caption": "Comparison chart titled 'Administration Times & Methods' showing administration duration, frequency, and location for KESIMPTA, Ocrevus, Ocrevus Zunovo, and Briumvi.",
+      "caption": "Comparison chart of administration times, methods, and dosing frequencies for KESIMPTA, Ocrevus, Ocrevus Zunovo, and Briumvi.",
       "bbox": [
-        99,
+        101,
         533,
         456,
-        985
+        986
       ],
       "doc": "brochure",
       "page": 9,

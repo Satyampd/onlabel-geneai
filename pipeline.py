@@ -387,6 +387,7 @@ def answer_turn(message: str, session_id: str, eval: bool = False) -> dict:
         "answer": answer,
         "citation": citation,
         "source_page": source_page,
+        "figure": best_item.get("figure") if best_item else None,
         "why": why,
         "latency_ms": round(latency_ms, 2),
     }

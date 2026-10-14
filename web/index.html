@@ -420,6 +420,64 @@
       transform: translateY(-1px);
     }
 
+    /* Embedded Figure Card */
+    .figure-container {
+      margin-top: 12px;
+      width: 100%;
+    }
+    .figure-card {
+      background: rgba(14, 17, 26, 0.85);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+    .figure-card:hover {
+      border-color: rgba(16, 185, 129, 0.5);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5), 0 0 20px -5px rgba(16, 185, 129, 0.2);
+    }
+    .figure-preview-img {
+      width: 100%;
+      max-height: 280px;
+      object-fit: cover;
+      object-position: top center;
+      display: block;
+      background: #0d1117;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .figure-meta {
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: rgba(18, 21, 32, 0.95);
+    }
+    .figure-caption {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-body);
+      font-size: 0.78rem;
+      font-weight: 500;
+      line-height: 1.4;
+    }
+    .figure-caption svg {
+      color: #34d399;
+      flex-shrink: 0;
+    }
+    .figure-expand-hint {
+      color: #34d399;
+      font-size: 0.72rem;
+      font-weight: 700;
+      white-space: nowrap;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
     /* Traceability Micro-Inspector */
     .audit-bar {
       display: flex;
@@ -950,6 +1008,24 @@
         contentHtml += '<div class="markdown-content"><p>' + escapeHtml(text) + '</p></div>';
       }
 
+      // Figure Diagram Card
+      if (options.figure) {
+        contentHtml += `
+          <div class="figure-container">
+            <div class="figure-card" onclick="window.openEvidenceModal('${options.figure.image_url}', '${escapeHtml(options.figure.caption)}')">
+              <img src="${options.figure.image_url}" alt="${escapeHtml(options.figure.caption)}" class="figure-preview-img" loading="lazy" />
+              <div class="figure-meta">
+                <div class="figure-caption">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                  <span>${escapeHtml(options.figure.caption)}</span>
+                </div>
+                <span class="figure-expand-hint">Enlarge ↗</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
       // Raycast-style Citation Pill
       if (options.citation) {
         contentHtml += `
@@ -1041,6 +1117,7 @@
           kind: data.kind,
           citation: data.citation,
           source_page_url: data.source_page_url,
+          figure: data.figure,
           why: data.why,
           latency_ms: data.latency_ms
         });
