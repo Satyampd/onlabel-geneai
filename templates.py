@@ -69,10 +69,10 @@ BANNER = (
     "Reports entered here are not sent to Novartis."
 )
 
-# Starter questions point at brochure content (pen, support, side effects, storage).
+# Starter questions point at the full 3-zone demo spectrum (factual, advice, safety complaint).
 STARTERS = [
     "How does the auto-injector pen work?",
-    "What support is available to me?",
-    "What are the most common side effects?",
     "How should I store my pen?",
+    "Can I skip my monthly dose this week?",
+    "My pen cracked when I took the cap off",
 ]

@@ -32,6 +32,8 @@ def _png(key: tuple, doc: str, pdf_page: int, parts=None, snippet=False) -> Resp
         raise HTTPException(status_code=404, detail="Not found")
     if key not in IMAGE_CACHE:
         try:
+            if len(IMAGE_CACHE) > 128:
+                IMAGE_CACHE.clear()
             IMAGE_CACHE[key] = source_view.render(doc, pdf_page, parts, snippet=snippet)
         except (IndexError, KeyError):
             raise HTTPException(status_code=404, detail="Not found")

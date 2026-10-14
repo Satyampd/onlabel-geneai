@@ -101,6 +101,30 @@ _COMPILED: dict[str, list[tuple[str, re.Pattern]]] = {
 }
 
 
+MODAL_PREFIXES = {"can", "could", "do", "does", "did", "if", "will", "might", "should", "would", "is", "are"}
+AMBIGUOUS_EXP_TERMS = {"i have", "i had", "i feel", "i get"}
+
+
+def _clean_exp_hits(hits: list[str], text: str) -> list[str]:
+    """Filter out experience markers when used in interrogative/conditional queries (e.g. 'Can I have a fever?')"""
+    if not any(h in AMBIGUOUS_EXP_TERMS for h in hits):
+        return hits
+    cleaned = []
+    for h in hits:
+        if h in AMBIGUOUS_EXP_TERMS:
+            genuine = False
+            for m in re.finditer(r"\b" + re.escape(h) + r"\b", text):
+                pre_words = text[:m.start()].rstrip().split()
+                if not pre_words or pre_words[-1].lower() not in MODAL_PREFIXES:
+                    genuine = True
+                    break
+            if genuine:
+                cleaned.append(h)
+        else:
+            cleaned.append(h)
+    return cleaned
+
+
 def _hits(name: str, text: str) -> list[str]:
     return [t for t, p in _COMPILED[name] if p.search(text)]
 
@@ -117,7 +141,7 @@ def safety_word_scan(message: str) -> tuple[str | None, list[str]]:
     if urgent:
         return "urgent", urgent
 
-    exp = _hits("exp", text)
+    exp = _clean_exp_hits(_hits("exp", text), text)
     urgent_ctx = _hits("urgent_ctx", text)
     if exp and urgent_ctx:
         return "urgent", exp + urgent_ctx
@@ -226,8 +250,10 @@ def best_match(msg_vec: list[float]) -> tuple[dict | None, float]:
         is_brochure = np.array([items[o].get("doc") == "brochure" for o in owners])
         if is_brochure.any():
             j = int(np.argmax(np.where(is_brochure, sims, -1.0)))
-            if float(sims[j]) >= best_score - config.BROCHURE_PREFERENCE_MARGIN:
-                return items[owners[j]], float(sims[j])
+            brochure_score = float(sims[j])
+            if brochure_score >= best_score - config.BROCHURE_PREFERENCE_MARGIN:
+                if best_score < config.ACCEPT_THRESHOLD or brochure_score >= config.ACCEPT_THRESHOLD:
+                    return items[owners[j]], brochure_score
     return best_item, best_score
 
 
@@ -249,7 +275,7 @@ RED_REPLIES = {
     "side_effect": ("red_side_effect", TEMPLATE_RED_SIDE_EFFECT),
 }
 
-_executor = ThreadPoolExecutor(max_workers=4)
+_executor = ThreadPoolExecutor(max_workers=16)
 
 
 def triage(client, message: str) -> dict:
@@ -422,8 +448,10 @@ def answer_turn(message: str, session_id: str, eval: bool = False) -> dict:
 
     try:
         os.makedirs(os.path.dirname(config.LOG_JSONL), exist_ok=True)
-        with open(config.LOG_JSONL, "a", encoding="utf-8") as f:
-            f.write(json.dumps(log_entry) + "\n")
+        import review
+        with review._write_lock:
+            with open(config.LOG_JSONL, "a", encoding="utf-8") as f:
+                f.write(json.dumps(log_entry) + "\n")
     except Exception as e:
         print(f"Warning: Failed to write to log.jsonl: {e}")
 

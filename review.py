@@ -40,11 +40,22 @@ def atomic_write(path: str, write_fn) -> None:
 
 # ---------- Items ----------
 
+_items_data_cache: dict = {"mtime": None, "data": None}
+
+
 def load_items_data() -> dict:
     if not os.path.exists(config.ITEMS_JSON):
         return {"items": [], "built_at": "", "build_seconds": 0}
-    with open(config.ITEMS_JSON, encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        mtime = os.path.getmtime(config.ITEMS_JSON)
+        if _items_data_cache["mtime"] != mtime:
+            with open(config.ITEMS_JSON, encoding="utf-8") as f:
+                _items_data_cache["data"] = json.load(f)
+                _items_data_cache["mtime"] = mtime
+        return _items_data_cache["data"]
+    except Exception as e:
+        print(f"Error loading items data: {e}")
+        return _items_data_cache.get("data") or {"items": [], "built_at": "", "build_seconds": 0}
 
 
 def block_reason(item: dict, reviewer: str) -> str:
@@ -109,6 +120,7 @@ def record_decision(item_id: str, decision: str, reviewer: str, reason_code: str
             "ts": datetime.now().isoformat(timespec="seconds"),
         }
         atomic_write(config.ITEMS_JSON, lambda f: json.dump(data, f))
+        _items_data_cache["mtime"] = None
     return item
 
 
